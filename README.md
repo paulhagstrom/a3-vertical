@@ -1,11 +1,27 @@
-a3wheel
+a3-vertical
 
-A game for the Apple ///
+Vertical scrolling games for the Apple ///
 
 Paul Hagstrom, July 2023
 
-Another Apple /// game, kind of a tech demo, but focusing specifically on the thing
-that lets you shift the vertical thingiewhatsit.
+A couple of work in progress games to be described at KFest 2023.
+
+Lazy River
+
+boat on a river
+
+Logdrive
+
+a lot of logs on a river
+
+spyhunter?
+
+parallax?
+
+
+relics
+
+old stuff that hasn't been cleaned up yet
 
 ## Compilation ##
 
