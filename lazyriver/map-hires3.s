@@ -3,39 +3,43 @@
 
 MapDirty:   .byte   0           ; nonzero if map needs to be redrawn due to movement
 NeedScroll: .byte   0           ; pos/neg if map needs to be scrolled up(clc)/down(sec) due to Hero Y movement
+CurrMapL:   .byte   0           ; current map line
+LinesLeft:  .byte   0           ; map lines left to draw
 
 ; paint the whole map
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
-; This is designed to be able to paint under any circumstance, but it turns out that
-; within the logic of the game it's only called once at the beginning.
-; Given that it does not refer to nudge, it may only work properly if
-; (HeroY-3) is an even multiple of 8.
+; assumes smooth scroll offset is 0
 
-paintmap:   lda R_BANK          ; save bank
-            sta PMBankSave      ; (but assume we are already in 1A00 ZP)
+paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
+            sta PMBankSave      ; save it inline within later restore code.
             lda #$00
             sta R_BANK          ; move to bank zero for the graphics
-            lda #$20            ; top field starts at absolute raster line $20
-            sta CurScrLine      ; CurScrLine keeps track of the current absolute raster line
-            lda HeroY           ; HeroY is the $23rd abstract line down
-            sec                 ; so the map data pointer for the top raster line in the top field
-            sbc #$23            ; is $23 above HeroY.
-            bcs novoidup        ; we did not run off the edge, there is no upper void
-            eor #$FF            ; invert the negative number to find the size of the upper void
-            adc #$01
-            tax                 ; put the vertical extent of the upper void in X
-            lda #$00            ; start the map at zero when we get past the void
-            beq :+
-novoidup:   ldx #$00            ; no upper void, extent of the upper void is 0
-:           stx VoidU           ; number of void lines above the map data
-            jsr setmapptr       ; load mapptr for the first map data line we will be drawing
-            cpx #$00            ; is there a void?
-            beq hiresline       ; no, there is no void, just go start drawing
-:           ldx CurScrLine      ; yes, there is a void, load the raster line into X
-            jsr drawvoid        ; draw the void line
-            inc CurScrLine      ; move down to the next raster line
-            dec VoidU           ; if there are still void lines left, keep drawing them
-            bpl :-
+            lda MapTop          ; map line of the top row on the screen
+            sta CurrMapL        ; becomes the current line
+            sta ZPtrA
+            lda #$34            ; map tiles start at $3400 in bank 2
+            sta ZPtrA + 1
+            lda #$82            ; map is bank 2
+            sta ZMapPtr + XByte
+            sta ZPtrA + XByte
+            lda #23
+            sta LinesLeft
+pmgetmap:   ldx CurrMapL
+            lda MapLineL, x
+            sta ZMapPtr
+            lda MapLineH, x
+            sta ZMapPtr + 1
+            ldy #19
+            lda (ZMapPtr), y    ; load map byte (shape to draw)
+            asl
+            asl
+            asl
+            asl
+            asl                 ; multiply by 32 for index into tiles
+            tay
+            lda (ZPtrA), y      ; first byte of tile
+            ; YOU ARE HERE
+            
 hiresline:  ldx CurScrLine      ; load the target raster line into X
             jsr drawlineb       ; we already set MapPtr earlier, use internal entry point
             inc CurScrLine      ; advance the graphics raster line
@@ -296,7 +300,7 @@ BorderBitB = %00100010
 BorderBitC = %01000100
 BorderBitD = %00001000
 
-; do the hires page lookup and ZP setup, common to drawvoid and drawline
+; do the hires page lookup and ZP setup
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
 ; returns with X holding the low byte of the starting/leftmost byte on the line
 ; also updates ZLineStart in 1A00 ZP and sets up ZOtherZP in all ZPs.
@@ -318,46 +322,6 @@ prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on scre
             lda YHiresL, x
             sta ZLineStart
             tax
-            rts
-            
-; enter with X holding the target raster, assumes we are in 1A00 ZP and bank 0 is banked in
-drawvoid:   jsr prepdraw
-            lda ZOtherZP        ; HGR1
-            sta R_ZP
-            lda #BorderBitA     ; write first byte to even bytes on HGR1
-            ldy #$13            ; fill $14 of them from left to right
-:           sta Zero, x
-            inx
-            inx
-            dey
-            bpl :-
-            inx                 ; skip pointer ahead 1 to get to odd bytes, starting with $27
-            ldy #$13            ; fill $14 of them as we pass back from right to left
-            lda #BorderBitC     ; write third byte to odd bytes on HGR1
-:           sta Zero, x
-            dex
-            dex
-            dey
-            bpl :-
-            lda ZOtherZP        ; HGR2
-            sta R_ZP
-            lda #BorderBitD     ; write fourth byte to odd bytes on HGR2
-            ldy #$13            ; fill $14 of them
-:           sta Zero, x
-            inx
-            inx
-            dey
-            bpl :-
-            dex                 ; skip back 1 to get to even bytes
-            ldy #$13            ; fill $14 of them
-            lda #BorderBitB    ; write second byte to odd bytes on HGR2
-:           sta Zero, x
-            dex
-            dex
-            dey
-            bpl :-
-            lda #$1A            ; go back to $1A00 ZP
-            sta R_ZP
             rts
 
 ; enter with X holding the target line on the graphics page (raster)

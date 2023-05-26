@@ -113,3 +113,7 @@ DivSeven:
             .byte   6, 6, 6, 6, 6, 6, 6
             .byte   7, 7, 7, 7, 7, 7, 7
             .byte   8, 8, 8, 8, 8, 8, 8
+
+; Address of start of each map line, filled in as we build the map
+MapLineL:   .res    256
+MapLineH:   .res    256

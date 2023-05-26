@@ -1,11 +1,17 @@
 ; lazyriver
 ; map construction
 
-; Map data lives in bank 2, from $2000-5FFF
-; Each byte represents a 7x8 tile (screen tiles 20x24)
-; Element tracking variables are from $300-AFF.
-; 
 ; builds a river with a somewhat random edge
+; map has 256 tiles down, build from the bottom up
+; (since it starts wide and will probably get narrow further on)
+
+; Map data and element tracking variables are in bank 2
+; Map data lives from $2000-3400.
+; Element tracking variables are from $300-AFF.
+
+; Each byte represents a 7x8 tile (screen tiles 20x24)
+; Each line fills the screen, but not more, so there are 20 tiles across.
+; With 256 lines, this means we have 5120 ($1400) bytes.
 
 TileLand:   .byte   C_LAND_A, C_LAND_B, C_LAND_C, C_LAND_D
 TileWater:  .byte   C_WATER_A, C_WATER_B, C_WATER_C, C_WATER_D
@@ -16,7 +22,25 @@ ShoreRV:    .byte 0
 MapLine:    .byte 0
 
 buildmap:   
-            ; pick random shore start points, start "velocity" as straight down
+            ; fill in the map start address lookup table
+            ldx #$20
+            ldy #$00
+            tya
+bmidxmap:   sta MapLineL, y
+            pha
+            txa
+            sta MapLineH, y
+            pla
+            iny
+            beq bmidxdone
+            clc
+            adc #$14
+            bcc bmidxmap
+            inx
+            bne bmidxmap    ; considered to be branch always
+bmidxdone:
+            dey             ; start at line $FF and build toward 0
+            ; pick random shore start points, start "velocity" as straight up
             ldx Seed
             lda Random, x
             and #$07        ; limit left shore start to first 7 tiles
@@ -26,55 +50,38 @@ buildmap:
             stx Seed
             and #$07        ; limit right short start to last 7 tiles
             sta ShoreR
-            lda #19         ; last tile on the right
+            lda #$13        ; last tile on the right
             sec
             sbc ShoreR
             sta ShoreR
-            lda #$00        ; start shore velocity at 0 (straight down)
+            lda #$00        ; start shore velocity at 0 (straight up)
             sta ShoreLV
             sta ShoreRV
-            sta MapLine     ; set current map line to 0
-            sta ZPtrA       ; set ZPtrA to $2000 of bank 2, top line of map
-            lda #$20
-            sta ZPtrA + 1
-            lda #$82
+            lda #$82        ; put ZPtrA in bank 2
             sta ZPtrA + XByte
             ; fill the current line
-            ; land from left to shore left
-bmmapline:  ldy ShoreL
-bmlandl:    ldx Seed
-            lda Random, x
-            and #$03        ; pick one of four land tiles
+            ; Y will (still) hold MapLine
+bmmapline:  sty MapLine     ; put map line in ZPtrA
+            lda MapLineH, y
+            sta ZPtrA + 1
+            lda MapLineL, y
+            sta ZPtrA
+            ldy #19         ; right to left
+bmscan:     ldx Seed        ; pick a random tile of four options
             inc Seed
-            tax
-            lda TileLand, x
-            sta (ZPtrA), y
-            dey
-            bpl bmlandl
-            ; water from shore left to shore right
-            ldy ShoreR
-bmwater:    ldx Seed
             lda Random, x
-            and #$03        ; pick one of four water tiles
-            inc Seed
-            tax
+            and #$03
+            cpy ShoreR      ; are we on the right bank?
+            bcs bmnotwat    ; yes, branch
+            cpy ShoreL      ; are we on the left bank?
+            bcc bmnotwat    ; yes (inland), branch
+            beq bmnotwat    ; yes (coast), branch
             lda TileWater, x
-            sta (ZPtrA), y
+            jmp bmstore
+bmnotwat:   lda TileLand, x
+bmstore:    sta (ZPtrA), y
             dey
-            cpy ShoreL
-            bne bmwater
-            ; land from shore right to right
-            ldy #19         ; last tile on the right
-bmlandr:    ldx Seed
-            lda Random, x
-            and #$03        ; pick one of four land tiles
-            inc Seed
-            tax
-            lda TileLand, x
-            sta (ZPtrA), y
-            dey
-            cpy ShoreR
-            bne bmlandr
+            bpl bmscan
             ; make the shoreline wander
             ; check to see if we're already narrow
             lda ShoreR
@@ -82,45 +89,18 @@ bmlandr:    ldx Seed
             sbc ShoreL
             cmp #$04        ; if shore edges are at least 4 tiles apart, wander
             bcc bmlwander
-            lda #<-1         ; otherwise set shore velocity to diverge (widen)
+            lda #<-1        ; otherwise set shore velocity to diverge (widen)
             sta ShoreLV
             lda #1
             sta ShoreRV
             bne bmaddvel
-bmlwander:  lda ShoreLV     ; far enough apart to let the shores wander
-            cmp #<-2
-            beq bmlplus     ; if LV is already -2, bring it back to -1
-            cmp #2
-            beq bmlminus    ; if LV is already 2, bring it back to 1
-            ; move the left shore
-            ldx Seed        ; otherwise randomly increase or decrease LV
-            inc Seed
-            lda Random, x   ; change velocity? y/n
-            bmi bmrwander   ; branch away if no
-            inx
-            inc Seed
-            lda Random, x
-            bpl bmlplus
-bmlminus:   dec ShoreLV
-            jmp bmrwander
-bmlplus:    inc ShoreLV
-bmrwander:  lda ShoreRV
-            cmp #<-2
-            beq bmrplus     ; if RV is already -2, bring it back to -1
-            cmp #2
-            beq bmrminus    ; if RV is already 2, bring it back to 1
-            ; move the right shore
-            ldx Seed        ; otherwise randomly increase or decrease RV
-            inc Seed
-            lda Random, x   ; change velocity? y/n
-            bmi bmaddvel    ; branch away if no
-            inx
-            inc Seed
-            lda Random, x   
-            bpl bmrplus
-bmrminus:   dec ShoreRV
-            jmp bmaddvel
-bmrplus:    inc ShoreRV
+bmlwander:  ; far enough apart to let shores wander
+            ldy ShoreLV
+            jsr bmwander
+            sty ShoreLV
+            ldy ShoreRV
+            jsr bmwander
+            sty ShoreRV
             ; add shore velocity to shore
 bmaddvel:   lda ShoreL
             clc
@@ -139,20 +119,28 @@ bmlok:      sta ShoreL
             sta ShoreRV
             lda #19         ; keep the shore on the right edge of the screen
 bmrok:      sta ShoreR
-            ; save the current line's map start and move to the next line
-            ldx MapLine
-            lda ZPtrA
-            sta MapBaseL, x
-            clc
-            adc #20
-            sta ZPtrA
-            lda ZPtrA + 1
-            sta MapBaseH, x
-            adc #0
-            sta ZPtrA + 1
-            inc MapLine
-            beq bmdone   ; branch away if we have done 256 map lines
+            ldy MapLine
+            beq bmdone      ; branch away if we have done 256 map lines
+            dey
             jmp bmmapline   ; otherwise go do the next one
             ; the shores are now done
-bmdone:
+bmdone:     rts
+
+; wander a shoreline - velocity in Y, returns in Y
+bmwander:   ; constrain velocity -- if it is 2 pull back to 1, either direction
+            cpy #<-2
+            beq bmwplus
+            cpy #2
+            beq bmwminus
+            ldx Seed
+            inc Seed
+            lda Random, x   ; change velocity? y/n
+            bmi bmwdone     ; no, branch away
+            inx
+            inc Seed
+            lda Random, x   ; which direction?
+            bpl bmwplus
+bmwminus:   dey
             rts
+bmwplus:    iny
+bmwdone:    rts

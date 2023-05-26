@@ -4,7 +4,7 @@
             .segment "CODE"
             .setcpu "6502"
 
-            .include "zpdef.inc"
+            .include "zpdef.s"
             .org     $A000 - 14
             
 ; SOS interpreter header
@@ -24,6 +24,7 @@ PlayerX:    .byte   0                       ; X-coordinate of player on the map.
 PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
+MapTop:     .byte   0                       ; map row at top of the screen
 
 ; The following setting governs how often the game clock goes off, which is when movement
 ; is processed.  Values under 3 risk leaving not enough time to do everything else when
@@ -188,15 +189,17 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON            
             jsr seedRandom      ; seed the "random" number list
-            lda #$20            ; start playfield kind of in the middle
-            sta PlayerX         ; this is the X coordinate of the hero on the map (0-3E)
-            lda #$C3            ; Start down near the bottom (note: number mod 8 should be 3)
-            sta PlayerY         ; this is the Y coordinate of the hero on the map (0-FF)
+            lda #232            ; top map row when we start
+            sta MapTop
+            lda #$09            ; start player kind of in the middle
+            sta PlayerX         ; this is the X coordinate of the player on the map (0-13)
+            lda #$FC            ; Start down near the bottom
+            sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             jsr buildmap        ; set up map data (in bank 2)
             jsr gfxdefine       ; define graphics assets
             jsr setupenv        ; arm interrupts
             lda #$00
-            sta ExitFlag
+            sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta VelocityX       ; player X velocity, can be negative, zero, or positive
             sta VelocityY       ; player Y velocity, can be negative, zero, or positive
