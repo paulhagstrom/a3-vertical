@@ -300,23 +300,7 @@ setupenv:   ; save IRQ vector and then install ours
             sta IRQVECT + 1
             lda #>inthandle
             sta IRQVECT + 2
-            lda ScrRegModB      ; first next mode
-            sta NextMode
-            sta SRegFstNxt      ; put it in the interrupt handler VBL reset code as well
-            lda #$16
-            sta ScrRegion       ; first next region is $16
-            lda #$01
-            sta PlaySound       ; start by assuming we will play background sound
-            lda #$00
-            sta FXPlaying       ; no sound effect currently playing
-            sta ZSoundPtr
-            sta ZFXPtr
-            lda #$20            ; first background segment starts at $2000 in bank 1
-            sta ZSoundPtr + 1   ; segment we are currently playing
-            sta BackNext        ; segment we will play next after this one
-            lda #$81            ; sound information in bank 1
-            sta ZSoundPtr + XByte
-            sta ZFXPtr + XByte
+            ; TODO: set up sound and screen splitting variables if used
 
             ; bank register - $FFEF - E-VIA input register A
             ; ZP register - $FFD0 - D-VIA input/output register B

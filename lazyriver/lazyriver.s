@@ -17,14 +17,21 @@ CodeStart:  jmp gameinit
 
             .include "buildmap.s"
             .include "artdefine.s"
-            .include "interrupts.s"         ; cannot be in banked memory
-            .include "lookups.s"            ; cannot be in banked memory
+            .include "interrupts.s"
+            .include "lookups.s"
+
+Seed:       .byte   0                       ; current place in the "random" number table
 
 PlayerX:    .byte   0                       ; X-coordinate of player on the map.
 PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
+PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 MapTop:     .byte   0                       ; map row at top of the screen
+
+MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
+MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)
+
 
 ; The following setting governs how often the game clock goes off, which is when movement
 ; is processed.  Values under 3 risk leaving not enough time to do everything else when
@@ -34,10 +41,6 @@ MoveDelay   = 3                             ; VBLs per game tick (3 seems about 
 
 CurScrLine: .byte   0
 CurMapLine: .byte   0
-MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
-MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)
-
-Seed:       .byte   0                       ; current place in the "random" number table
 
 ; main game event loop
 
@@ -189,16 +192,17 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON            
             jsr seedRandom      ; seed the "random" number list
-            lda #232            ; top map row when we start
+            jsr buildmap        ; set up map data (in bank 2)
+            jsr buildgfx        ; define graphics assets
+            jsr setupenv        ; arm interrupts
+            lda #232            ; top map row when we start (makes bottom row 255)
             sta MapTop
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-13)
             lda #$FC            ; Start down near the bottom
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
-            jsr buildmap        ; set up map data (in bank 2)
-            jsr gfxdefine       ; define graphics assets
-            jsr setupenv        ; arm interrupts
-            lda #$00
+            lda #$00            
+            sta PlayerYOff      ; this is the Y offset of the player from the top of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta VelocityX       ; player X velocity, can be negative, zero, or positive
@@ -209,7 +213,11 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
             bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
-            jsr paintmap        ; mode 7 a3 hires map regions - paint whole visible map
+            bit D_SCROLLOFF     ; turn off smooth scroll at first
+            bit D_TEXT          ; A3 hires
+            bit D_MIX           ; A3 hires
+            bit D_HIRES         ; A3 hires
+            jsr paintmap        ; paint visible map
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
 

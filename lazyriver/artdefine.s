@@ -34,14 +34,15 @@ C_LAND_D    = $07         ; land type 4
 ; TODO: plan here is to convert tile colors to proper 4-byte segments
 ; TODO: then, convert objects to pre-shifted 4-byte segments with masks
 
-buildgfx:   lda #$82    ; bank 2
+buildgfx:   lda #$82            ; bank 2
             sta ZPtrA + XByte
-            lda #$34    ; start map tiles at $3400
+            lda #$34            ; start map tiles at $3400
             sta ZPtrA + 1
             ldy #$00
             sty ZPtrA
 bgtile:     tya
             pha                 ; stash start index of tile line
+            ; store definition line in ZPixByteA-ZpixByteD
             lda MapTiles, y
             sta ZPixByteA
             iny
@@ -53,7 +54,7 @@ bgtile:     tya
             iny
             lda MapTiles, y
             sta ZPixByteD
-            jsr xlatequad
+            jsr xlatequad       ; trasnlate into ZPixByteE-ZPixByteH
             pla                 ; restore start index of tile line
             tay
             lda ZPixByteE

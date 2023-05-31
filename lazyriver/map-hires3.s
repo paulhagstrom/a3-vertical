@@ -5,8 +5,10 @@ MapDirty:   .byte   0           ; nonzero if map needs to be redrawn due to move
 NeedScroll: .byte   0           ; pos/neg if map needs to be scrolled up(clc)/down(sec) due to Hero Y movement
 CurrMapL:   .byte   0           ; current map line
 LinesLeft:  .byte   0           ; map lines left to draw
+RastLeft:   .byte   0           ; tile raster lines left to draw
+CurrScrL:   .byte   0           ; current screen line
 
-; paint the whole map
+; paint the whole map (called at the outset)
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; assumes smooth scroll offset is 0
 
@@ -14,14 +16,15 @@ paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             sta PMBankSave      ; save it inline within later restore code.
             lda #$00
             sta R_BANK          ; move to bank zero for the graphics
-            lda MapTop          ; map line of the top row on the screen
-            sta CurrMapL        ; becomes the current line
-            sta ZPtrA
-            lda #$34            ; map tiles start at $3400 in bank 2
-            sta ZPtrA + 1
+            sta ZPtrA           ; tile graphics low byte
+            sta CurScrL         ; current screen line
             lda #$82            ; map is bank 2
             sta ZMapPtr + XByte
             sta ZPtrA + XByte
+            lda #$34            ; tile graphics start at $3400
+            sta ZPtrA + 1
+            lda MapTop          ; map line of the top row on the screen
+            sta CurrMapL        ; becomes the current line
             lda #23
             sta LinesLeft
 pmgetmap:   ldx CurrMapL
@@ -29,56 +32,74 @@ pmgetmap:   ldx CurrMapL
             sta ZMapPtr
             lda MapLineH, x
             sta ZMapPtr + 1
+            ; read the map line, compute indices into tile graphics, and cache
+            ; buffer the pointers into tile graphics for the line
             ldy #19
-            lda (ZMapPtr), y    ; load map byte (shape to draw)
-            asl
-            asl
-            asl
-            asl
-            asl                 ; multiply by 32 for index into tiles
+pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
+            lsr
+            ror
+            ror
+            ror                 ; multiply by 32 for index into tiles
+            sta Zero, y
+            dey
+            bpl pmcache
+            ; go through the 8 raster lines for this map tile
+            lda #$08
+            sta RastLeft
+            ; set up base address for all four tile pixel bytes
+pmtile:     ldx CurrScrL
+            lda YHiresLA, x
+            sta PMLineA
+            sta PMLineB
+            lda YHiresLB, x
+            sta PMLineC
+            sta PMLineD
+            lda YHiresHA, x
+            sta PMLineA + 1
+            sta PMLineC + 1
+            lda YHiresHB, x
+            sta PMLineB + 1
+            sta PMLineD + 1            
+            ldx #19
+pmraster:   lda Zero, x         ; load cached tile art offset
             tay
-            lda (ZPtrA), y      ; first byte of tile
-            ; YOU ARE HERE
-            
-hiresline:  ldx CurScrLine      ; load the target raster line into X
-            jsr drawlineb       ; we already set MapPtr earlier, use internal entry point
-            inc CurScrLine      ; advance the graphics raster line
-            lda MapPtrL         ; advance the map pointer to the next line
-            clc
-            adc #$40
-            sta MapPtrL
-            bcc novoiddown
-            inc MapPtrH
-            lda MapPtrH
-            cmp #$60            ; did we just fall off the map into the bottom void?
-            bne novoiddown      ; no, so continue on
-:           ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
-            cpx #$B0            ; last line of bottom field complete? ($90-$AF)
-            beq imdone
-            jsr drawvoid        ; draw the void line
-            inc CurScrLine      ; advance the graphics raster line
-            jmp :-
-novoiddown: ldx CurScrLine
-            cpx #$B0            ; last line of bottom field complete? ($90-$AF)
-            beq imdone          ; if so, we are finished drawing the hires map
-            cpx #$40            ; last line of top field complete? ($20-$3F)
-            bne hiresline       ; nope, keep going            
-            lda #$90            ; we just finished the top field, so skip ahead to the lower field
-            sta CurScrLine      ; set the raster line for the start of the lower field
-            lda HeroY           ; set up map starting point for the top of the lower field
-            clc                 ; which is 4 lines past HeroY.
-            adc #$04
-            bcs pmonlyvoid      ; are we already in a lower void? If so, the whole field is in the void.
-            jsr setmapptr       ; not in the void, set up MapPtr for the data
-            jmp hiresline       ; proceed to draw
-pmonlyvoid: ldx CurScrLine      ; there is nothing left but void, so just void the bottom field
-            jsr drawvoid
-            inc CurScrLine
-            lda CurScrLine
-            cmp #$B0            ; last line of bottom field complete? ($90-$AF)
-            bne pmonlyvoid      ; nope, keep drawing void lines
+            asl                 ; multiply by 2 for graphics offset
+            tax
+            lda (ZPtrA), y      ; first byte of tile graphics
+PMLineA = *+1
+            sta INLINEADDR, x   ; put in graphics page
+            iny
+            lda (ZPtrA), y
+PMLineB = *+1
+            sta INLINEADDR, x   ; put in graphics page
+            iny
+            inx                 ; move to second pixel byte
+            lda (ZPtrA), y
+PMLineC = *+1
+            sta INLINEADDR, x   ; put in graphics page
+            iny
+            lda (ZPtrA), y
+PMLineD = *+1
+            sta INLINEADDR, x   ; put in graphics page
+            txa
+            lsr                 ; divide by 2 to get back to tile art offset
+            tax
+            iny
+            tya
+            sta Zero, x         ; stash new cached offset
+            dex
+            bpl pmraster
+            ; move to next raster line in tile
+            inc CurrScrL
+            dec RastLeft
+            bne pmtile
+            ; move to next map line
+            inc CurrMapL
+            dec LinesLeft
+            bne pmgetmap
+            ; painting map is finished, restore bank and exit
 PMBankSave = *+1
-imdone:     lda #INLINEVAR
+            lda #INLINEVAR
             sta R_BANK
             rts
 

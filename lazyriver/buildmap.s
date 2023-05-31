@@ -15,29 +15,29 @@
 
 TileLand:   .byte   C_LAND_A, C_LAND_B, C_LAND_C, C_LAND_D
 TileWater:  .byte   C_WATER_A, C_WATER_B, C_WATER_C, C_WATER_D
-ShoreL:     .byte 0
-ShoreR:     .byte 0
-ShoreLV:    .byte 0
-ShoreRV:    .byte 0
-MapLine:    .byte 0
+ShoreL:     .byte 0         ; current tile X-coordinate of left shore
+ShoreR:     .byte 0         ; current tile X-coordinate of right shore
+ShoreLV:    .byte 0         ; left shoreline velocity
+ShoreRV:    .byte 0         ; right shoreline velocity
+MapLine:    .byte 0         ; current map line being built
 
 buildmap:   
             ; fill in the map start address lookup table
-            ldx #$20
-            ldy #$00
-            tya
+            ldx #$20        ; high byte of map address
+            ldy #$00        ; line of map we are on
+            tya             ; coincidentally, low byte of map address
 bmidxmap:   sta MapLineL, y
             pha
             txa
             sta MapLineH, y
             pla
             iny
-            beq bmidxdone
+            beq bmidxdone   ; wrapped around, we're done
             clc
-            adc #$14
+            adc #$14        ; 20 tiles per line
             bcc bmidxmap
             inx
-            bne bmidxmap    ; considered to be branch always
+            bne bmidxmap    ; branch always
 bmidxdone:
             dey             ; start at line $FF and build toward 0
             ; pick random shore start points, start "velocity" as straight up
@@ -48,7 +48,7 @@ bmidxdone:
             inx
             lda Random, x
             stx Seed
-            and #$07        ; limit right short start to last 7 tiles
+            and #$07        ; limit right shore start to last 7 tiles
             sta ShoreR
             lda #$13        ; last tile on the right
             sec
@@ -60,23 +60,24 @@ bmidxdone:
             lda #$82        ; put ZPtrA in bank 2
             sta ZPtrA + XByte
             ; fill the current line
-            ; Y will (still) hold MapLine
-bmmapline:  sty MapLine     ; put map line in ZPtrA
+            ; Y will (still) hold MapLine (0) at the beginning
+bmmapline:  sty MapLine     ; put map line base address in ZPtrA
             lda MapLineH, y
             sta ZPtrA + 1
             lda MapLineL, y
             sta ZPtrA
-            ldy #19         ; right to left
+            ldy #$13        ; right to left, start at last tile in the line
 bmscan:     ldx Seed        ; pick a random tile of four options
             inc Seed
             lda Random, x
             and #$03
-            cpy ShoreR      ; are we on the right bank?
-            bcs bmnotwat    ; yes, branch
-            cpy ShoreL      ; are we on the left bank?
-            bcc bmnotwat    ; yes (inland), branch
-            beq bmnotwat    ; yes (coast), branch
-            lda TileWater, x
+            tax
+            cpy ShoreR          ; are we on the right bank?
+            bcs bmnotwat        ; yes, branch
+            cpy ShoreL          ; are we on the left bank?
+            bcc bmnotwat        ; yes (inland), branch
+            beq bmnotwat        ; yes (coast), branch
+            lda TileWater, x    ; otherwise, we're in the water
             jmp bmstore
 bmnotwat:   lda TileLand, x
 bmstore:    sta (ZPtrA), y
@@ -93,7 +94,7 @@ bmstore:    sta (ZPtrA), y
             sta ShoreLV
             lda #1
             sta ShoreRV
-            bne bmaddvel
+            bne bmaddvel    ; branch always
 bmlwander:  ; far enough apart to let shores wander
             ldy ShoreLV
             jsr bmwander
