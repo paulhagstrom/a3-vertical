@@ -16,6 +16,7 @@
 CodeStart:  jmp gameinit
 
             .include "buildmap.s"
+            .include "buildsound.s"
             .include "artdefine.s"
             .include "interrupts.s"
             .include "lookups.s"
@@ -28,10 +29,12 @@ PlayerYOff: .byte   0                       ; Y offset of player from top of map
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 MapTop:     .byte   0                       ; map row at top of the screen
+MapOff:     .byte   0                       ; offset into tile the map row at top of screen in
 
 MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
 MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)
 
+NumLogs     .byte   0                       ; number of logs on map
 
 ; The following setting governs how often the game clock goes off, which is when movement
 ; is processed.  Values under 3 risk leaving not enough time to do everything else when
@@ -194,6 +197,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr seedRandom      ; seed the "random" number list
             jsr buildmap        ; set up map data (in bank 2)
             jsr buildgfx        ; define graphics assets
+            jsr buildsfx        ; define sound effects
             jsr setupenv        ; arm interrupts
             lda #232            ; top map row when we start (makes bottom row 255)
             sta MapTop
@@ -209,14 +213,19 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta VelocityY       ; player Y velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
+            lda #$01            ; number of logs, this ought to be level-dependent
+            sta NumLogs
             lda TwelveBran      ; start at smooth scroll offset 0 (first one in TwelveBran)
             sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
             bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
-            bit D_SCROLLOFF     ; turn off smooth scroll at first
-            bit D_TEXT          ; A3 hires
-            bit D_MIX           ; A3 hires
-            bit D_HIRES         ; A3 hires
+            bit D_TEXT          ; A3 text
+            bit D_NOMIX         ; A3 text
+            bit D_LORES         ; A3 text
+            bit SS_XXN          ; start at smooth scroll offset zero
+            bit SS_XNX
+            bit SS_NXX
+            bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
             jsr paintmap        ; paint visible map
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit

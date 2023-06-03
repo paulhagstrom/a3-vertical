@@ -3,32 +3,17 @@
 
 MapDirty:   .byte   0           ; nonzero if map needs to be redrawn due to movement
 NeedScroll: .byte   0           ; pos/neg if map needs to be scrolled up(clc)/down(sec) due to Hero Y movement
-CurrMapL:   .byte   0           ; current map line
-LinesLeft:  .byte   0           ; map lines left to draw
-RastLeft:   .byte   0           ; tile raster lines left to draw
-CurrScrL:   .byte   0           ; current screen line
 
-; paint the whole map (called at the outset)
-; (updates afterwards are incremental, drawing single lines and using smooth scroll)
-; assumes smooth scroll offset is 0
+; read a line of tiles from the map into the zero page cache ($00-$13)
+; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)
+; a line is 20 ($14) bytes long in the map representation
+; call with X being the row of the map we are caching
+; assumes:
+; - ZMapPtr + XByte has already been set to #$82 (bank 2)
+; - ZP is at $1A00
+; does not disturb X
 
-paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
-            sta PMBankSave      ; save it inline within later restore code.
-            lda #$00
-            sta R_BANK          ; move to bank zero for the graphics
-            sta ZPtrA           ; tile graphics low byte
-            sta CurScrL         ; current screen line
-            lda #$82            ; map is bank 2
-            sta ZMapPtr + XByte
-            sta ZPtrA + XByte
-            lda #$34            ; tile graphics start at $3400
-            sta ZPtrA + 1
-            lda MapTop          ; map line of the top row on the screen
-            sta CurrMapL        ; becomes the current line
-            lda #23
-            sta LinesLeft
-pmgetmap:   ldx CurrMapL
-            lda MapLineL, x
+tilecache:  lda MapLineL, x
             sta ZMapPtr
             lda MapLineH, x
             sta ZMapPtr + 1
@@ -40,15 +25,25 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
             ror
             ror
             ror                 ; multiply by 32 for index into tiles
-            sta Zero, y
+            sta ZTileCache, y
             dey
             bpl pmcache
-            ; go through the 8 raster lines for this map tile
-            lda #$08
-            sta RastLeft
-            ; set up base address for all four tile pixel bytes
-pmtile:     ldx CurrScrL
-            lda YHiresLA, x
+            rts
+
+; paint a single line
+; call with:
+; - X holding the physical graphics line (0-BF)
+; - Y holding the offset into tile we should draw
+; assumes:
+; - tile cache holds the tile graphics addresses for tiles including this line
+; - ZP is $1A00
+; - ZPtrA already points to tile asset data in bank 2
+; each tile takes two bytes on the screen, so index of start of pixel data
+; on the screen is 2x the index into cache of tile data
+; (That is: tile 3 is filling bytes 6 and 7 on the screen)
+; does not preserve A, X, or Y.
+
+paintline:  lda YHiresLA, x     ; look up the bases for all four tile bytes
             sta PMLineA
             sta PMLineB
             lda YHiresLB, x
@@ -59,49 +54,129 @@ pmtile:     ldx CurrScrL
             sta PMLineC + 1
             lda YHiresHB, x
             sta PMLineB + 1
-            sta PMLineD + 1            
-            ldx #19
-pmraster:   lda Zero, x         ; load cached tile art offset
+            sta PMLineD + 1
+            tya                 ; line of tile to draw
+            asl
+            asl                 ; x4 (each line in tile is 4 bytes)
+            sta ZTileOff        ; remember this for reuse later
+            clc                 ; clear for addition, will remain clear
+            lda #19             ; start at the last tile column
+            sta ZMapX
+pmraster:   ldx ZMapX           ; tile column
+            lda ZTileCache, x   ; load cached tile art start offset
+            adc ZTileOff        ; add line offset
             tay
-            asl                 ; multiply by 2 for graphics offset
+            txa
+            asl                 ; tile column x2 for graphics memory offset
             tax
             lda (ZPtrA), y      ; first byte of tile graphics
 PMLineA = *+1
-            sta INLINEADDR, x   ; put in graphics page
+            sta INLINEADDR, x   ; put in graphics page $20
             iny
             lda (ZPtrA), y
 PMLineB = *+1
-            sta INLINEADDR, x   ; put in graphics page
+            sta INLINEADDR, x   ; put in graphics page $40
             iny
-            inx                 ; move to second pixel byte
             lda (ZPtrA), y
 PMLineC = *+1
-            sta INLINEADDR, x   ; put in graphics page
+            sta INLINEADDR, x   ; put in graphics page $20, next byte
             iny
             lda (ZPtrA), y
 PMLineD = *+1
-            sta INLINEADDR, x   ; put in graphics page
-            txa
-            lsr                 ; divide by 2 to get back to tile art offset
-            tax
-            iny
-            tya
-            sta Zero, x         ; stash new cached offset
-            dex
+            sta INLINEADDR, x   ; put in graphics page $40, next byte
+            dec ZMapX
             bpl pmraster
+            rts
+
+; set up pointers and banks for graphics interaction
+; bank 0 for graphics, ZPtrA for map tiles
+gfxinit:    lda #$00
+            sta R_BANK          ; move to bank zero for the graphics
+            sta ZPtrA           ; tile graphics low byte
+            lda #$82            ; map is bank 2
+            sta ZMapPtr + XByte
+            sta ZPtrA + XByte
+            lda #$34            ; tile graphics start at $3400
+            sta ZPtrA + 1
+            rts
+
+; paint the whole map (called at the outset)
+; (updates afterwards are incremental, drawing single lines and using smooth scroll)
+; assumes smooth scroll offset is 0
+
+paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
+            sta PMBankSave      ; save it inline within later restore code.
+            jsr gfxinit         ; set up pointers and switch banks
+            lda #$#00
+            sta ZCurrScrL       ; current screen line
+            lda MapTop          ; map line of the top row on the screen
+            clc
+            adc #23             ; +23 to get to map line of bottom row
+            sta ZCurrMapL       ; becomes the current line
+            lda #23
+            sta ZLinesLeft
+pmgetmap:   ldx CurrMapL
+            jsr tilecache
+            ; go through the 8 raster lines for this map tile
+            lda #$07
+            sta ZCurrOff
+pmtile:     ldx ZCurrScrL
+            ldy ZCurrOff
+            jsr paintline
             ; move to next raster line in tile
-            inc CurrScrL
-            dec RastLeft
-            bne pmtile
-            ; move to next map line
-            inc CurrMapL
-            dec LinesLeft
-            bne pmgetmap
+            dec ZCurrScrL
+            dec ZCurrOff
+            bpl pmtile
+            ; move to next map line (moving up the screen)
+            dec ZCurrMapL
+            dec ZLinesLeft
+            bpl pmgetmap
             ; painting map is finished, restore bank and exit
 PMBankSave = *+1
             lda #INLINEVAR
             sta R_BANK
             rts
+
+; loose code for scrolling - TODO remove
+            ; do smooth scroll first while we wait for beam to travel horizontally
+NudgeVal = *+1                  ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
+            bne nudge0          ;3 [24] then 15 cycles, 12 bytes per block -- INLINEVAR
+nudge0:     bit SS_XXN
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge1:     bit SS_XXY
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge2:     bit SS_XXN
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge3:     bit SS_XXY
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge4:     bit SS_XXN
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge5:     bit SS_XXY
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge6:     bit SS_XXN
+            bit SS_XYX
+            bit SS_YXX
+            jmp postnudge       ; at this point (each block but last: 39, last (nudge 7): 36) 
+nudge7:     bit SS_XXY
+            bit SS_XYX
+            bit SS_YXX
+            ; polling below doesn't work on real hardware, seems to work fine in MAME.
+            ; though also does not seem to matter whether I wait for bit set or bit clear.
+postnudge:  ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 15, about 2-3 loops)
+
+
 
 ; if the screen needs a scroll due to the Hero moving in the Y direction, do it.
 ; NeedScroll will be 0 if nothing needed, else pos or neg based on hero's Y velocity
@@ -120,82 +195,77 @@ fixedscr:   lda #$00
 noscroll:   rts
 
 ; scrollmap will effect a vertical movement of the map regions of the screen.
+; we are skipping the first 8 scan lines (they are A3 text, for messages/score)
+; otherwise we are scrolling the whole screen (in general covering 24 map lines, 23 if offset is 0)
 ; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
 ; if you call it with carry set, it will move the map down (hero upward), decreasing nudge
-; it is assumed that the HeroY coordinate has just been changed, triggering this call.
 ; it will finish by setting NudgeVal correctly so that the interrupt handler will display it right.
 
 ; in general, increasing nudge from oldnudge to oldnudge + 1
-; copy graphics line 08 + oldnudge to 00 + oldnudge
+; this makes the screen scroll up; abstractly:
+; copy line 1 of tile 2 to line 1 of tile 1, etc.
+; then draw new line 1 of tile 24 drawn from line 1 of "tile 25"
+; specifically:
 ; copy graphics line 10 + oldnudge to 08 + oldnudge
 ; copy graphics line 18 + oldnudge to 10 + oldnudge
-; draw map line for graphics line 20 + oldnudge on graphics line 18 + oldnudge
+; ...there are C0 (192) total lines ...
+; copy graphics line A8 + oldnudge to B0 + oldnudge
+; copy graphics line B0 + oldnudge to B8 + oldnudge
+; draw map line for graphics line C0 + oldnudge on graphics line B8 + oldnudge
 ; and then advance nudge to become oldnudge + 1
+;
 ; to move back up (decreasing nudge from nudge + 1 to nudge)
+; this makes the screen scroll down
+; abstractly: copy line 8 of tile 23 to line 8 of tile 24, etc.
+; then draw new line 8 of tile 1 drawn from line 8 of "tile 0"
+; specifically:
+; copy graphics line B0 + nudge to B8 + nudge
+; copy graphics line A8 + nudge to B0 + nudge
+; ...there are C0 (192) total lines ...
 ; copy graphics line 10 + nudge to 18 + nudge
 ; copy graphics line 08 + nudge to 10 + nudge
-; copy graphics line 00 + nudge to 08 + nudge
 ; draw map line for graphics line 00 + nudge on graphics line 00 + nudge
-; top field starts at $20, draws $20 lines of map (offsets 0-1F),
-; bottom field starts at $90, draws $20 lines of map (offsets 27-46).
-; The zero point (no void, map offsets from 0-46 are rendered) has HeroY at 23.
-; So, the top visible line is HeroY - 23,
-; the last visible line in the upper field is HeroY - 4
-; playfield goes from HeroY - 3 to HeroY + 3
-; and bottom field goes from HeroY + 4 to HeroY + 23.
 
-; TODO - separate this in two parts like for playfield, so that computing and blit can be separated
+; as usual, it is hard to wrap my head around this.
+; Suppose MapTop is 232 and MapOff is 0, where we start.
+; and the river scrolls down.
+; so the old line 08 is now displayed on line 09
+; MapOff becomes 7, need to draw new top line on line 0F (will draw at top)
+; so I load in the map line 231 (post-move MapTop), and buffer line 7 (post-move MappOff) into 0
+; copy all the line 7s down from end of screen to top 
+; if it were going the other way,
+; MapOff becomes 1, MapTop stays 232.
+; now I need to copy from top to bottom, and then buffer line MapTop+24's line old offset (0) into 0
+; this is pretty doable.
+
  
 scrollmap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
-            lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
+            lda #$B8            ; first copy target raster line (then up, copying toward zero)
             sta PTopRastA
-            lda #$90            ; first copy target raster line of lower field (then up, copying toward zero)
-            sta PBotRastA
-            lda #$04            ; map offset back from HeroY for newly drawn line in top field.
-            sta ZTopMapOff
             lda #$01            ; remember that we are incrementing (will later be added to PNudge for NudgePos)
             sta ZPInc
+            lda
             jmp umbegin         ; skip past the decrementing parm block
-umdec:      lda #$38            ; first copy target raster line in lower field (then down, copying away from zero)
+umdec:      lda #$08            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PTopRastA
-            lda #$A8            ; first copy target raster line in lower field (then down, copying away from zero)
-            sta PBotRastA
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
             sta ZTopMapOff
             lda #$00            ; remember that we are decrementing (will later be added to PNudge for NudgePos)
             sta ZPInc
-umbegin:    lda HeroY
-            adc #$04            ; intentionally not clearing carry before this, using the entry value of carry
-            and #$07            ; mod 8
-            sta ZNudge          ; save the unmultiplied version for doing math in here
-            lda R_BANK          ; save bank
+umbegin:    lda R_BANK          ; save bank
             sta UMBankSave      ; (but assume we are already in 1A00 ZP)
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
             sta R_BANK
-            sta ZTouchVoid      ; reset "touched the void" flag            
-            ; do the top field
-            ldx #$40            ; buffer line in raster 40
+            ldx #$00            ; buffer new line in raster 00
+            lda MapTop
             lda HeroY           ; find the new data line for the top field
             sec
             sbc ZTopMapOff      ; counting back from HeroY to either top or bottom of top field
             sta ZMapOffset      ; store the map offset we will draw top field line from
-            bcs umnotvoid
-            inc ZTouchVoid      ; we have touched the void in the top field
-            jsr drawvoid
-            jmp btmfield
-umnotvoid:  jsr drawline
-            ; do the bottom field
-btmfield:   ldx #$41            ; buffer line in raster 41
-            lda ZMapOffset      ; find map line for the bottom field
-            clc                 ; by adding $27 to the map line from the top field
-            adc #$27
-            bcc :+              ; we didn't cross a page boundary, we are not in the void
-            dec ZTouchVoid      ; if we were in the void before, we're not now.  Else we are.
-            beq :+              ; if we're not in the void skip to drawing the line
-            jsr drawvoid
-            jmp umcopy
-:           jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
+            jsr drawline
             ; now copy everything to visible screen regions
+            ; TOOD - stall until we get to VBL?
+            
 umcopy:     ldy ScrRegion       ; stall for screen mode to leave hires region
             cpy #$00            ; wait for bottom field hires region to pass
             bne umcopy
@@ -218,7 +288,7 @@ PTopRastA = *+1
 :           ldx #$40            ; new top field line buffer
             jsr copylines       ; copy lines that can be copied
 UMBankSave = *+1
-upddone:    lda #INLINEVAR      ; put the bank back
+upddone:    lda #INLINEVAR      ; restore the bank
             sta R_BANK
             lda ZPInc           ; advance PNudge to NudgePos (adds one if we were incrementing)
             clc
@@ -229,24 +299,25 @@ upddone:    lda #INLINEVAR      ; put the bank back
             sta NudgeVal
             rts
 
-; copylines uses self-modifying code and ZP repointing to quickly copy the three graphics lines
-; enter with start line (top line plus NudgePos) in A,
+; copylines rolls the whole screen below raster 8
+; raster line 0 is the new line that will be fed in at the edge
+; call this after filling raster line 0 with the new line
+; there are 23 lines to copy (one being from the line 0 buffer)
+; uses self-modifying code and ZP repointing to quickly copy the graphics lines
+; enter with start line (first target line) in A,
 ; carry clear for increase nudge, carry set for decrease nudge,
-; and x holding the new line that will be copied in ($40 or $41)
-; exits with x still holding the line that would be the target of new draw (was last source)
+; e.g. with A=B8, carry set, if scrolling down (hero moving up)
 ; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit
-; interrupts are too tight in this game to use the stack to push
+; interrupts with sfx would be too tight to use the stack to push
+; nothing (A, X, Y) is preserved
 
-LinesLeft:  .byte   0
-
-copylines:  tay                 ; move start line into Y
+copylines:  tay                 ; move first target line into Y
             pha                 ; and remember it 
-            stx BufferLine      ; store where the offscreen buffer is for the last line
             lda #$00            ; set LinesDec to 1 if carry was set or 0 if carry was clear
             rol
             sta LinesDec
-            lda #$03            ; move four lines (last one being from the buffer), countdown in LinesLeft
-            sta LinesLeft
+            lda #23             ; move 23 lines (last copying from buffer), countdown in LinesLeft
+            sta ZLinesLeft
             lda YHiresS, y      ; set the first target line based on start line we were passed
             sta TargS           ; target low, end of the line
             lda YHiresHA, y
@@ -267,20 +338,21 @@ lmprep:     tay
 lmsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
             sta SourceS
             lda YHiresL, y      ; source start-of-line low byte
-            sta lmsrca + 1      ; modify code in upcoming loop (page 1 source)
-            sta lmsrcb + 1      ; modify code in upcoming loop (page 2 source)
+            sta SourceA         ; modify code in upcoming loop (page 1 source)
+            sta SourceB         ; modify code in upcoming loop (page 2 source)
             lda YHiresHA, y
-            sta lmsrca + 2      ; source A high
+            sta SourceA + 1     ; source A high
             clc
             adc #$20            ; compute HB
-            sta lmsrcb + 2      ; source B high
+            sta SourceB + 1     ; source B high
 TargHA = *+1
             lda #INLINEVAR      ; point ZP at target A page
             sta R_ZP
 TargS = *+1
             ldx #INLINEVAR      ; start x at the end of the target line
-            ldy #$27
-lmsrca:     lda $2000, y        ; this address is modified to be exactly at the start of the line
+            ldy #$27            ; start y at the end of the source line
+SourceA = *+1
+lmsrca:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
             sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
             dey
@@ -289,8 +361,9 @@ TargHB = *+1
             lda #INLINEVAR      ; point ZP at target B page
             sta R_ZP
             ldx TargS           ; start x at the end of the target line
-            ldy #$27
-lmsrcb:     lda $4000, y        ; this address is modified to be exactly at the start of the line
+            ldy #$27            ; start y at the end of the source line
+SourceB = *+1
+lmsrcb:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
             sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
             dey
@@ -299,9 +372,9 @@ lmsrcb:     lda $4000, y        ; this address is modified to be exactly at the 
 SourceS = *+1
             lda #INLINEVAR
             sta TargS
-            lda lmsrca + 2
+            lda SourceA + 1
             sta TargHA
-            lda lmsrcb + 2
+            lda SourceB + 1
             sta TargHB
             dec LinesLeft
             beq lmlast          ; last line source is an offscreen buffer
@@ -309,17 +382,10 @@ SourceS = *+1
             lda #$1A            ; restore ZP to $1A00
             sta R_ZP
             rts
-BufferLine = *+1
-lmlast:     ldy #INLINEVAR      ; offscreen buffer line
+lmlast:     ldy #$00            ; offscreen buffer line is line 0
             pla                 ; toss out saved line
             jmp lmsetsrc
 
-; seven magenta pixels for the left and right two bytes in the map region
-; and for the void lines
-BorderBitA = %00010001
-BorderBitB = %00100010
-BorderBitC = %01000100
-BorderBitD = %00001000
 
 ; do the hires page lookup and ZP setup
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP

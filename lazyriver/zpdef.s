@@ -11,7 +11,13 @@ INLINEADDR  = $2020     ; mnemonic to remind me where variable is inline in code
 
 ; Used in interpreter (1A00) ZP.
 
-Zero        = $00   ; steer clear of 00-13, used for buffering display
+ZTileCache  = $00   ; $14 bytes of tile cache, used for buffering display
+ZTileOff    = $14   ; offset into tile graphics, used while drawing a line
+ZMapX       = $15   ; current column in the map being drawn (when drawing a line)
+ZCurrScrL   = $16   ; current screen line
+ZCurrOff    = $17   ; current offset into tile
+ZCurrMapL   = $18   ; current map line
+ZLinesLeft  = $19   ; lines left to draw of map
 
 ; scratch pointers
 ZPtrA       = $28
@@ -27,6 +33,7 @@ ZLogType    = $38   ; pointer to log type data
 ZLogTick    = $3A   ; pointer to log tick data
 ZLogAnim    = $3C   ; pointer to log current frame data
 ZLogPeriod  = $3E   ; pointer to log tick period data
+ZLogSp      = $40   ; pointer to log speed, maybe redundant. Ticks per move.
 
 ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collision
 ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
@@ -37,9 +44,8 @@ ZOldPtr     = $50   ; original position of element moving
 ZNewPtr     = $52   ; new position of element moving
 ZTailPtr    = $54   ; original position of second segment of element moving (hoarder)
 ; variables used during movement processing
-ZCurrHoard  = $56   ; current hoarder being processed
-ZOldXX      = $57   ; original premovement X of trailing segement
-ZOldYY      = $58   ; original premovement Y of trailing segment
+ZCurrLog    = $56   ; current log being processed
+
 ZOldX       = $59   ; original premovement X
 ZOldY       = $5A   ; original premovement Y
 ZNewX       = $5B   ; postmomvement X
