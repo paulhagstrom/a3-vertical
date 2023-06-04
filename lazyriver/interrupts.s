@@ -1,9 +1,6 @@
 ; lazyriver
 ; Interrupt-related routines
 ;
-; TwelveBran is a table of multiples of $0C, used as a branch table when setting NudgeVal
-TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
-
 ; modes we are using and their index values above.  xC = branch table value
 ; 0 xF = 00 - 40 char Apple III color               text    nomix   lores
 ; 1 xF = 0F - Fg/bg hires (280x192, 16 colors)      text    nomix   hires

@@ -16,7 +16,7 @@
 CodeStart:  jmp gameinit
 
             .include "buildmap.s"
-            .include "buildsound.s"
+;            .include "buildsound.s"
             .include "artdefine.s"
             .include "interrupts.s"
             .include "lookups.s"
@@ -34,7 +34,7 @@ MapOff:     .byte   0                       ; offset into tile the map row at to
 MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
 MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)
 
-NumLogs     .byte   0                       ; number of logs on map
+NumLogs:    .byte   0                       ; number of logs on map
 
 ; The following setting governs how often the game clock goes off, which is when movement
 ; is processed.  Values under 3 risk leaving not enough time to do everything else when
@@ -50,7 +50,7 @@ CurMapLine: .byte   0
 ExitFlag = *+1                              ; keyboard handler makes this nonzero to trigger exit
 eventloop:  lda #INLINEVAR                  ; if ExitFlag becomes nonzero (within keyboard processing)
             bne alldone                     ; then exit
-KeyCaught = *+1                             ; keyboard int pushes a caught key in here
+KeyCaught = *+1                             ; keyboard interrupt pushes a caught key in here
             lda #INLINEVAR                  ; check if we have recently caught a key (keyboard interrupt)
             beq :+
             jsr handlekey                   ; if there was a key, handle it
@@ -68,24 +68,6 @@ offtick:
             bcs eventloop                   ; go back around if we spent some time
             jsr hrcleanup                   ; patch visible match regions based on movement
             bcs eventloop                   ; go back around if we spent some time
-            jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
-            bcs eventloop                   ; go back around if we spent some time
-            jsr drawplay                    ; redraw the playfield if needed
-            bcs eventloop                   ; go back around if we spent some time
-            ; make sure background music queue isn't starved
-            lda BackNext                    ; is there a background sample already queued up?
-            bne elmusicok                   ; yep we're all good
-NowPlaying = *+1                            ; current position on the MusicSeq list
-            ldx #INLINEVAR                  ; find the next segment
-            inx
-            lda MusicSeq, x
-            bne elsetnext                   ; got the next segment
-            ldx #$00                        ; hit the end, go back to the first segment
-            lda MusicSeq
-elsetnext:  stx NowPlaying
-            sta BackNext                    ; queue up the next one
-elmusicok:  
-            jsr drawmedres                  ; draw compasses in medres area
             jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
             jmp eventloop
             
@@ -197,7 +179,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr seedRandom      ; seed the "random" number list
             jsr buildmap        ; set up map data (in bank 2)
             jsr buildgfx        ; define graphics assets
-            jsr buildsfx        ; define sound effects
+            ;jsr buildsfx        ; define sound effects
             jsr setupenv        ; arm interrupts
             lda #232            ; top map row when we start (makes bottom row 255)
             sta MapTop
