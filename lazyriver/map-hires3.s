@@ -1,6 +1,26 @@
 ; lazyriver
 ; A3 hires display map routines
 
+; movement processing happens on the VBL downbeat, so wait until the next one to 
+; update graphics.
+; This checks to see if scrolling is needed (domove communicates via NeedScroll).
+; called always but if no scrolling is needed, it exits quickly with carry clear.
+; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
+fixscroll:  clc
+            lda NeedScroll
+            beq noscroll
+            bmi scrolldn
+            jsr scrollmap       ; scroll the screen (using smooth scroll) (up/clc)
+            sec                 ; tell eventloop we took some time
+            jmp fixedscr
+scrolldn:   sec
+            jsr scrollmap       ; scroll the screen (using smooth scroll) (down/sec)
+            sec                 ; tell eventloop we took some time
+fixedscr:   lda #$00
+            sta NeedScroll      ; we no longer need a scroll
+noscroll:   rts
+
+
 ; read a line of tiles from the map into the zero page cache ($00-$13)
 ; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)
 ; a line is 20 ($14) bytes long in the map representation

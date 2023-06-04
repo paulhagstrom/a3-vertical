@@ -18,6 +18,7 @@ CodeStart:  jmp gameinit
             .include "buildmap.s"
 ;            .include "buildsound.s"
             .include "artdefine.s"
+            .include "status-text40.s"
             .include "interrupts.s"
             .include "lookups.s"
 
@@ -64,11 +65,9 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
             jmp eventloop                   ; go back up to schedule in all the other stuff
             ; when not on the game clock, do everything else until we hit the game clock again
 offtick:
-            jsr fixscroll                   ; scroll the playfield if needed
+            jsr fixscroll                   ; check if map scroll is needed and do it if so
             bcs eventloop                   ; go back around if we spent some time
-            jsr hrcleanup                   ; patch visible match regions based on movement
-            bcs eventloop                   ; go back around if we spent some time
-            jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
+            jsr drawstatus                  ; redraw score
             jmp eventloop
             
 alldone:    lda #$7F                        ;disable all interrupts
@@ -134,25 +133,6 @@ keydone:    lda #$00
             sta KeyCaught
             rts
 
-; compute map pointer, based on A upon entry.  Map data is in bank 2, $2000-5FFF.
-; each line is $40 bytes in storage (only 3F bytes used), so take A and multiply by
-; $40.  This is equivalent to rotating A right twice into a zero and swapping the bytes.
-; If current map pointer is something like 00000101 (5), shift bits to translate to:
-; MapPtrL: 01000000 (40) MapPtrH: 00100001 (11) ($2140 and $40 bytes there)
-
-setmapptr:  pha
-            lda #$00
-            sta MapPtrL
-            pla
-            lsr                 ; shift lower two bits of map line
-            ror MapPtrL         ; into higher bits of MPL
-            lsr                 ; (multiplying by $40, the length of a map line)
-            ror MapPtrL
-            clc
-            adc #$20            ; map data starts at $2000, add this to H.
-            sta MapPtrH
-            rts
-
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
@@ -209,6 +189,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             bit SS_NXX
             bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
             jsr paintmap        ; paint visible map
+            jsr paintstat       ; paint status area
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
 
