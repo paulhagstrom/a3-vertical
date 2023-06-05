@@ -31,9 +31,29 @@ My steps are:
 ```
 ca65 a3wheel.s
 ld65 -o a3wheel.bin -C apple3big.cfg a3wheel.o
-ac -d a3wheel.po SOS.INTERP
-ac -p a3wheel.po SOS.INTERP bin < a3wheel.bin
+java -jar ac.jar -d a3wheel.po SOS.INTERP
+java -jar ac.jar -p a3wheel.po SOS.INTERP bin < a3wheel.bin
 ```
+
+I use Applecommander, requires java, but brew install might be sufficient
+
+See https://github.com/lifepillar/homebrew-appleii
+and https://applecommander.github.io/install/
+
+
+```
+brew tap lifepillar/appleii
+brew install applecommander-ac
+alias ac='/opt/homebrew/Cellar/applecommander-ac/1.8.0/bin/ac'
+```
+
+test install with:
+
+```
+ac -h
+```
+
+
 
 ## Play ##
 

@@ -17,6 +17,9 @@ ZMapX       = $15   ; current column in the map being drawn (when drawing a line
 ZCurrScrL   = $16   ; current screen line
 ZCurrOff    = $17   ; current offset into tile
 ZCurrMapL   = $18   ; current map line
+ZLinesLeft  = $19   
+
+Zero        = $00
 
 ; scratch pointers
 ZPtrA       = $28

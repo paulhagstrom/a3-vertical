@@ -15,12 +15,14 @@
 
 CodeStart:  jmp gameinit
 
+            .include "artdefine.s"
             .include "buildmap.s"
 ;            .include "buildsound.s"
-            .include "artdefine.s"
-            .include "status-text40.s"
+            .include "gamemove.s"
             .include "interrupts.s"
             .include "lookups.s"
+            .include "map-hires3.s"
+            .include "status-text40.s"
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
@@ -31,6 +33,9 @@ VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 MapTop:     .byte   0                       ; map row at top of the screen
 MapOff:     .byte   0                       ; offset into tile the map row at top of screen in
+
+GameLevel:  .byte   0
+GameScore:  .byte   0, 0, 0
 
 MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
 MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)

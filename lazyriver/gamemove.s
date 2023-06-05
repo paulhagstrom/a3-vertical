@@ -6,7 +6,7 @@ domove:     ; TODO - move logs
             ; TODO - allow hero to move vertically too
             lda VelocityY
             beq dmherostay      ; branch if not moving vertically
-            bmi smheroup        ; branch if moving up toward top of map
+            bmi dmheroup        ; branch if moving up toward top of map
             ; moving down toward bottom of map
             ldy MapTop          ; check to see if we are at the bottom
             cpy #231            ; last possible maptop?

@@ -7,7 +7,8 @@
 ; called always but if no scrolling is needed, it exits quickly with carry clear.
 ; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
 fixscroll:  clc
-            lda NeedScroll
+NeedScroll = *+1
+            lda #INLINEVAR
             beq noscroll
             bmi scrolldn
             jsr scrollmap       ; scroll the screen (using smooth scroll) (up/clc)
@@ -124,7 +125,7 @@ gfxinit:    lda #$00
 paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
             sta PMBankSave      ; save it inline within later restore code.
             jsr gfxinit         ; set up pointers and switch banks
-            lda #$#00
+            lda #$00
             sta ZCurrScrL       ; current screen line
             lda MapTop          ; map line of the top row on the screen
             clc
@@ -132,7 +133,7 @@ paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             sta ZCurrMapL       ; becomes the current line
             lda #23
             sta ZLinesLeft
-pmgetmap:   ldx CurrMapL
+pmgetmap:   ldx ZCurrMapL
             jsr tilecache
             ; go through the 8 raster lines for this map tile
             lda #$07
@@ -310,8 +311,8 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; notes: interrupts too tight to use stack for speed increase here
 ; zero page is used for blitting speed, so variables below can't be in ZP
 
-ScrollDir   .byte 0             ; preserve entry carry in high bit
-LinesLeft   .byte 0             ; lines remaining to draw
+ScrollDir:  .byte 0             ; preserve entry carry in high bit
+LinesLeft:  .byte 0             ; lines remaining to draw
 
 copylines:  bcc :+              ; branch away if we are increasing nudge
             ; decreasing smooth scroll parameter ("nudge")
@@ -345,7 +346,7 @@ lmprep:     tay
             pha                 ; remember source line we computed for the next iteration's target
 lmsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
             sta SourceS
-            lda YHiresL, y      ; source start-of-line low byte
+            lda YHiresLA, y      ; source start-of-line low byte
             sta SourceA         ; modify code in upcoming loop (page 1 source)
             sta SourceB         ; modify code in upcoming loop (page 2 source)
             lda YHiresHA, y
