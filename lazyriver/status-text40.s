@@ -29,7 +29,7 @@ paintstat:  lda #$8F
             sta (ZPtrA), y
             dey
             bpl :-
-            lda #<TextPageB     ; go to color space
+            lda #>TextPageB     ; go to color space
             sta ZPtrA + 1
             ldy #$27
 :           lda StatColA, y
@@ -40,7 +40,7 @@ paintstat:  lda #$8F
 
 ; update level on screen - kept separate because it rarely changes
 
-drawlevel:  ldx #<TextPageA
+drawlevel:  lda #<TextPageA
             clc
             adc #$08            ; screen location of level
             sta ZNumPtr

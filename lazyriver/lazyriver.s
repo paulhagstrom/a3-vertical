@@ -181,8 +181,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             bit D_TEXT          ; A3 text
             bit D_NOMIX         ; A3 text
             bit D_LORES         ; A3 text
-;            sta D_MIX           ;4 switch to a3 hires mode DEBUG REMOVE
-;            sta D_HIRES         ;4 [19] this just barely makes it DEBUG REMOVE
             bit SS_XXN          ; start at smooth scroll offset zero
             bit SS_XNX
             bit SS_NXX
