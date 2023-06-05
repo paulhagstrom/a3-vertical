@@ -16,6 +16,7 @@ domove:     ; TODO - move logs
             bcs dmherostay      ; if at the very bottom, do not move
 dmherodnok: sta NeedScroll
             bpl dmdone          ; branch always
+            ; moving up toward top of map
 dmheroup:   ldy MapTop          ; check to see if we are at the top
             bne dmheroupok      ; if not at top map line, up is for sure ok
             ldy MapOff          ; in top map line, at top offset?

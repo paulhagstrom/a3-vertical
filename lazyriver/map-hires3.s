@@ -24,7 +24,7 @@ noscroll:   rts
 ; read a line of tiles from the map into the zero page cache ($00-$13)
 ; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)
 ; a line is 20 ($14) bytes long in the map representation
-; call with X being the row of the map we are caching
+; enter with: X being the row of the map we are caching
 ; assumes:
 ; - ZMapPtr + XByte has already been set to #$82 (bank 2)
 ; - ZP is at $1A00
@@ -45,6 +45,18 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
             sta ZTileCache, y
             dey
             bpl pmcache
+            rts
+
+; set up pointers and banks for graphics interaction
+; bank 0 for graphics, ZPtrA for map tiles
+gfxinit:    lda #$82            ; map is bank 2
+            sta ZMapPtr + XByte
+            sta ZPtrA + XByte
+            lda #$34            ; tile graphics start at $3400
+            sta ZPtrA + 1
+            lda #$00
+            sta R_BANK          ; move to bank zero for the graphics
+            sta ZPtrA           ; tile graphics low byte
             rts
 
 ; paint a single line
@@ -105,18 +117,6 @@ PMLineD = *+1
             bpl pmraster
             rts
 
-; set up pointers and banks for graphics interaction
-; bank 0 for graphics, ZPtrA for map tiles
-gfxinit:    lda #$82            ; map is bank 2
-            sta ZMapPtr + XByte
-            sta ZPtrA + XByte
-            lda #$34            ; tile graphics start at $3400
-            sta ZPtrA + 1
-            lda #$00
-            sta R_BANK          ; move to bank zero for the graphics
-            sta ZPtrA           ; tile graphics low byte
-            rts
-
 ; paint the whole map (called at the outset)
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; assumes smooth scroll offset is 0
@@ -128,7 +128,7 @@ paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             sta ZCurrScrL       ; current screen line
             lda MapTop          ; map line of the top row on the screen
             clc
-            adc #23             ; +23 to get to map line of bottom row
+            adc #22             ; +22 to get to map line of bottom row
             sta ZCurrMapL       ; becomes the current line
             lda #23
             sta ZLinesLeft
@@ -200,10 +200,10 @@ PMBankSave = *+1
 
 scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
-            jsr gfxinit
-            lda #$00            ; go to bank 0, where (hires) graphics memory lives
+            lda #$00
             ror                 ; put carry in hi bit
             sta SMIncDec
+            jsr gfxinit         ; go to bank 0, where (hires) graphics memory lives
             lda MapOff          ; current nudge value (offset into map's top line that we're at)
             bcs smdecn          ; branch away if we are decreasing nudge
             ; we are increasing nudge (hero downward, map upward)
@@ -212,26 +212,13 @@ scrollmap:  lda R_BANK          ; save bank
             and #$07
             bne smincnow        ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
-            ldy MapTop
-            cpy #232            ; if we're already at the lowest possible line, stop
-            bne smincgo
-            ; we've moved down as far as we can, have to stop
-            ; TODO - signal problem somehow and stop the scroll
-            nop
-            ; there's still map left, so move down the map
-smincgo:    inc MapTop
+            inc MapTop
 smincnow:   sta MapOff          ; store new nudge value in map offset variable
             jmp smdraw
             ; we are decreasing nudge (hero upward, map downward)
 smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
-            ldx MapTop
-            bne smdecgo
-            ; we've moved up as far as we can, have to stop
-            ; TODO - signal problem somehow and stop the scroll
-            nop
-            ; there's still map left, so move up the map
-smdecgo:    dec MapTop          ; move top of map up one line
+            dec MapTop          ; move top of map up one line
             lda #$07
             sta MapOff          ; set offset to 7 in the new map line
             bne smdraw          ; branch always

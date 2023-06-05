@@ -47,6 +47,7 @@ bmidxdone:
             sta ShoreL
             inx
             lda Random, x
+            inx
             stx Seed
             and #$07        ; limit right shore start to last 7 tiles
             sta ShoreR
@@ -88,8 +89,8 @@ bmstore:    sta (ZPtrA), y
             lda ShoreR
             sec
             sbc ShoreL
-            cmp #$04        ; if shore edges are at least 4 tiles apart, wander
-            bcc bmlwander
+            cmp #$06        ; if shore edges are at least 6 tiles apart, wander
+            bcs bmlwander
             lda #<-1        ; otherwise set shore velocity to diverge (widen)
             sta ShoreLV
             lda #1
