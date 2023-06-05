@@ -125,7 +125,7 @@ gfxinit:    lda #$00
 paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
             sta PMBankSave      ; save it inline within later restore code.
             jsr gfxinit         ; set up pointers and switch banks
-            lda #$00
+            lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
             lda MapTop          ; map line of the top row on the screen
             clc

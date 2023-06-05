@@ -37,9 +37,6 @@ MapOff:     .byte   0                       ; offset into tile the map row at to
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
 
-MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
-MapPtrH:    .byte   0                       ; Holds address of left edge of a map line (high)
-
 NumLogs:    .byte   0                       ; number of logs on map
 
 ; The following setting governs how often the game clock goes off, which is when movement
@@ -47,9 +44,6 @@ NumLogs:    .byte   0                       ; number of logs on map
 ; movement isn't being processed, but over 3 start feeling pretty pokey.  Best to try to
 ; keep it at 3 or below and make everything more efficient.
 MoveDelay   = 3                             ; VBLs per game tick (3 seems about minimum possible)
-
-CurScrLine: .byte   0
-CurMapLine: .byte   0
 
 ; main game event loop
 
@@ -182,13 +176,13 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta VBLTick
             lda #$01            ; number of logs, this ought to be level-dependent
             sta NumLogs
-            lda TwelveBran      ; start at smooth scroll offset 0 (first one in TwelveBran)
-            sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
             bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
             bit D_TEXT          ; A3 text
             bit D_NOMIX         ; A3 text
             bit D_LORES         ; A3 text
+;            sta D_MIX           ;4 switch to a3 hires mode DEBUG REMOVE
+;            sta D_HIRES         ;4 [19] this just barely makes it DEBUG REMOVE
             bit SS_XXN          ; start at smooth scroll offset zero
             bit SS_XNX
             bit SS_NXX

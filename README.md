@@ -31,8 +31,8 @@ My steps are:
 ```
 ca65 a3wheel.s
 ld65 -o a3wheel.bin -C apple3big.cfg a3wheel.o
-java -jar ac.jar -d a3wheel.po SOS.INTERP
-java -jar ac.jar -p a3wheel.po SOS.INTERP bin < a3wheel.bin
+ac -d a3wheel.po SOS.INTERP
+ac -p a3wheel.po SOS.INTERP bin < a3wheel.bin
 ```
 
 I use Applecommander, requires java, but brew install might be sufficient

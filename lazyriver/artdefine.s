@@ -70,7 +70,6 @@ bgtile:     tya
             sta (ZPtrA), y
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
-            
             rts
             
 ; convert 4 bytes of sensibly encoded pixels into

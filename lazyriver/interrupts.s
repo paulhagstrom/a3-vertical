@@ -53,6 +53,8 @@ intvbl:     lda #$06            ;2 reset the HBL counter for switch to a3 hires 
             sta RE_T2CH         ;4 
             sta D_NOMIX         ;4 set screen to Apple III color text mode for after VBL
             sta D_LORES         ;4
+            sta D_MIX           ;4 switch to a3 hires mode DEBUG REMOVE
+            sta D_HIRES         ;4 [19] this just barely makes it DEBUG REMOVE
             ;sta D_TEXT         ; don't need to hit this switch because it does not change
             lda #$10            ;2 clear the VBL (CB1) interrupt
             sta RE_INTFLAG      ;4
