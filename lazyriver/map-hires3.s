@@ -21,7 +21,6 @@ fixedscr:   lda #$00
             sta NeedScroll      ; we no longer need a scroll
 noscroll:   rts
 
-
 ; read a line of tiles from the map into the zero page cache ($00-$13)
 ; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)
 ; a line is 20 ($14) bytes long in the map representation
@@ -108,14 +107,14 @@ PMLineD = *+1
 
 ; set up pointers and banks for graphics interaction
 ; bank 0 for graphics, ZPtrA for map tiles
-gfxinit:    lda #$00
-            sta R_BANK          ; move to bank zero for the graphics
-            sta ZPtrA           ; tile graphics low byte
-            lda #$82            ; map is bank 2
+gfxinit:    lda #$82            ; map is bank 2
             sta ZMapPtr + XByte
             sta ZPtrA + XByte
             lda #$34            ; tile graphics start at $3400
             sta ZPtrA + 1
+            lda #$00
+            sta R_BANK          ; move to bank zero for the graphics
+            sta ZPtrA           ; tile graphics low byte
             rts
 
 ; paint the whole map (called at the outset)
@@ -148,7 +147,7 @@ pmtile:     ldx ZCurrScrL
             ; move to next map line (moving up the screen)
             dec ZCurrMapL
             dec ZLinesLeft
-            bpl pmgetmap
+            bne pmgetmap
             ; painting map is finished, restore bank and exit
 PMBankSave = *+1
             lda #INLINEVAR
@@ -201,8 +200,8 @@ PMBankSave = *+1
 
 scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
+            jsr gfxinit
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
-            sta R_BANK
             ror                 ; put carry in hi bit
             sta SMIncDec
             lda MapOff          ; current nudge value (offset into map's top line that we're at)
@@ -297,7 +296,7 @@ postnudge:  rts
 ; TwelveBran is a table of multiples of $0C, used as a branch table when setting NudgeVal
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
-; copylines rolls the whole screen (all lines below raster 8)
+; copylines rolls the whole screen (all lines below raster 7)
 ; raster line 0 is the new line that will be fed in at the appropriate edge
 ; call this after filling raster line 0 with the new line
 ; there are 23 lines to copy (one being from the line 0 buffer)
@@ -326,7 +325,7 @@ copylines:  bcc :+              ; branch away if we are increasing nudge
             adc #$08            ; first target line is at the top
             tay
             sty ScrollDir       ; use for branching to add
-lmsettrg:   lda #23             ; move 23 lines (last copying from buffer), countdown in LinesLeft
+lmsettrg:   lda #22             ; move 23 lines (last copying from buffer), countdown in LinesLeft
             sta LinesLeft
             lda YHiresS, y      ; set the first target line based on start line we were passed
             sta TargS           ; target low, end of the line
