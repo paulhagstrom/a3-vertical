@@ -154,6 +154,23 @@ PMBankSave = *+1
             sta R_BANK
             rts
 
+; imagine you are at MapTop 230, MapOff 0
+; and you increase the nudge, which means you are now drawing from 1-7 and then 0.
+; this has the effect of scrolling the map up the screen
+; you need to copy line 0 of 231 to line 0 of 230.
+; and so on down the screen until you get to the last row.
+; there, you need to copy line 0 of 253 (230+23) into line 0 of 252 (230+22)
+; nudge went from 0 to 1 and we are doing everything wrt the lowest of these, 0.
+
+; now imagine you are back at MapTop 230, MapOff 0
+; and you decrease the nudge, which means you are now drawing 7 and then 0-6.
+; this should have the effect of scrolling the map down the screen
+; you need to copy line 7 of 229 to line 7 of 230, and so on down the screen.
+; except for this to work you have to go up the screen.
+; copy line 7 of 251 into line 7 of 252, then of 250 into 251, etc.
+; nudge went from 0 to 7 and we are doing everything wrt the lowest of these, 7
+; 
+
 ; in general, increasing nudge from oldnudge to oldnudge + 1
 ; this makes the screen scroll up; abstractly:
 ; copy line 1 of tile 2 to line 1 of tile 1, etc.
@@ -221,13 +238,13 @@ smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the sa
             dec MapTop          ; move top of map up one line
             lda #$07
             sta MapOff          ; set offset to 7 in the new map line
+            sta SMNVal          ; use new (smaller) offset for copylines
             bne smdraw          ; branch always
             ; nudge will not wrap, so map line will not change
 smdecnow:   dec MapOff
 smdraw:     ldx MapTop
             jsr tilecache       ; cache the tiles for top line
-            ldy MapOff          ; line of tile to draw
-            sty SMNVal          ; use new (smaller) offset for copylines
+            ldy SMNVal          ; line of tile to draw
             ldx #$00            ; draw to raster 0
             jsr paintline
             ; now copy everything to visible screen regions

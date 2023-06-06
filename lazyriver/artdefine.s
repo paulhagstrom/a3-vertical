@@ -11,14 +11,14 @@
 
 ; tile names
 
-C_WATER_A   = $00         ; water type 1
-C_WATER_B   = $01         ; water type 2
-C_WATER_C   = $02         ; water type 3
-C_WATER_D   = $03         ; water type 4
-C_LAND_A    = $04         ; land type 1
-C_LAND_B    = $05         ; land type 2
-C_LAND_C    = $06         ; land type 3
-C_LAND_D    = $07         ; land type 4
+C_LAND_A    = $00         ; land type 1
+C_LAND_B    = $01         ; land type 2
+C_LAND_C    = $02         ; land type 3
+C_LAND_D    = $03         ; land type 4
+C_WATER_A   = $04         ; water type 1
+C_WATER_B   = $05         ; water type 2
+C_WATER_C   = $06         ; water type 3
+C_WATER_D   = $07         ; water type 4
 
 ; |   2000      |   4000      |   2001      |   4001      |
 ; | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
