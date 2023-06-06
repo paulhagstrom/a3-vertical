@@ -77,27 +77,6 @@ bgtile:     tya
 ; call by putting the color codes of pixels 1-7 in
 ; ZPixByteA [12], ZPixByteB [34], ZPixByteC [56], ZPixByteD [7-]
 ; and the return bytes will be ZPixByteE-ZPixByteH
-
-            ; |   2000      |   4000      |   2001      |   4001      |
-            ; | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
-            ; |LSB       MSB|             |             |             | 
-            ; |-- P0 -|-- P1 -|-- P2 -|-- P3 -|-- P4 -|-- P5 -|-- P6 -|
-            ;
-            ; end quote
-            ; 
-            ; Colors:
-            ; 0000 0 black      0100 4 darkgreen    1000 8 brown    1100 C green
-            ; 0001 1 magenta    0101 5 grey1        1001 9 orange   1101 D yellow
-            ; 0010 2 darkblue   0110 6 medblue      1010 A grey2    1110 E aqua
-            ; 0011 3 purple     0111 7 lightblue    1011 B pink     1111 F white
-            ;
-            ; The bits increase steadily in significance from pixel 1 to pixel 7.
-            ; LSB->MSB
-            ;  1000100  0100010  0010001  0001000
-            ; MSB->LSB
-            ;  0010001  0100010  1000100  0001000
-            ; 00010001 00100010 01000100 00001000
-            ; byte 0 (byte 0 page 1): -1110000 [0+0] 421/8421
 xlatequad:
             lda ZPixByteA       ; pixels 0-1
             tay                 ; remember for later (need pixel 1)

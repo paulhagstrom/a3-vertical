@@ -8,18 +8,17 @@ XByte       = $1601     ; Interp extended address offset (for ZP 1A)
 Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
 INLINEVAR   = $33       ; mnemonic to remind me where variable is inline in code
 INLINEADDR  = $2020     ; mnemonic to remind me where variable is inline in code
+Zero        = $00
 
 ; Used in interpreter (1A00) ZP.
 
 ZTileCache  = $00   ; $14 bytes of tile cache, used for buffering display
 ZTileOff    = $14   ; offset into tile graphics, used while drawing a line
 ZMapX       = $15   ; current column in the map being drawn (when drawing a line)
-ZCurrScrL   = $16   ; current screen line
-ZCurrOff    = $17   ; current offset into tile
-ZCurrMapL   = $18   ; current map line
-ZLinesLeft  = $19   
-
-Zero        = $00
+ZCurrScrL   = $16   ; current screen line (used in paintmap)
+ZCurrOff    = $17   ; current offset into tile (used in paintmap)
+ZCurrMapL   = $18   ; current map line (used in paintmap)
+ZLinesLeft  = $19   ; lines remaining to draw (used in paintmap)
 
 ; scratch pointers
 ZPtrA       = $28
@@ -27,6 +26,7 @@ ZPtrB       = $2A
 ZPtrC       = $2C
 
 ; game state variables
+; so far not really used
 ZLogX       = $30   ; pointer to log X coordinates data
 ZLogY       = $32   ; pointer to log Y coordinates data
 ZLogXV      = $34   ; pointer to log X velocity data
@@ -64,20 +64,10 @@ ZTargDTemp  = $65   ; target distance temporary variable
 ZTargDXTemp = $66   ; target vector X temporary variable
 ZTargDYTemp = $67   ; target vector Y temporary variable
 ZIsHero     = $68   ; nonzero if the hero is being processed, 0 otherwise
-ZCurrDisk   = $69   ; current disk while scanning for targets
 
 ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 
-ZNudge      = $70
-ZTouchVoid  = $71
-ZMapOffset  = $72
-ZPInc       = $73
-ZCharTemp   = $74
 ZMapPtr     = $76
-
-; lookup tables
-ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
-ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 
 ; interrupt handler
 ZSoundPtr   = $D2   ; current sample in background music
@@ -100,15 +90,7 @@ ZDirtStack  = $E2   ; pointer to dirty column group stack pointers - E2 E3 E4 E5
 ; these are not in conflict with addresses in the 1A00 ZP,
 ; generally limited to screen holes: 78-7F, F8-FF
 
-; playfield (play-text40)
-
-ZOtherZP    = $7A
-ZCurrDrawX  = $7B
-ZLineStart  = $7C
 ZNumPtr     = $7D   ; pointer for screen target for drawnumber
-ZBufCount   = $7F   ; count for buffering map data
-ZCurrMapX   = $7E
-ZMapBuffer  = $F8
 ZPxScratch  = $FF
 
 ; I/O softswitches

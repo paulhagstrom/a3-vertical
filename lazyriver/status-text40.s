@@ -66,6 +66,7 @@ drawstatus: lda #<TextPageA
             sta ZNumPtr + XByte
             ldx #$02
 :           lda GameScore, x
+            lda TopRow          ; DEBUG
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr

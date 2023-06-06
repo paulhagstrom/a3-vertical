@@ -8,18 +8,18 @@ domove:     ; TODO - move logs
             beq dmherostay      ; branch if not moving vertically
             bmi dmheroup        ; branch if moving up toward top of map
             ; moving down toward bottom of map
-            ldy MapTop          ; check to see if we are at the bottom
-            cpy #231            ; last possible maptop?
+            ldy TopRow          ; check to see if we are at the bottom
+            cpy #231            ; last possible top row?
             bne dmherodnok
-            ldy MapOff          ; last possible offset?
+            ldy TopOff          ; last possible offset?
             cpy #$07
             bcs dmherostay      ; if at the very bottom, do not move
 dmherodnok: sta NeedScroll
             bpl dmdone          ; branch always
             ; moving up toward top of map
-dmheroup:   ldy MapTop          ; check to see if we are at the top
+dmheroup:   ldy TopRow          ; check to see if we are at the top
             bne dmheroupok      ; if not at top map line, up is for sure ok
-            ldy MapOff          ; in top map line, at top offset?
+            ldy TopOff          ; in top map line, at top offset?
             beq dmherostay      ; if at the very top, do not move
 dmheroupok: sta NeedScroll
 dmherostay: ; TODO - allow hero to move horizontally too

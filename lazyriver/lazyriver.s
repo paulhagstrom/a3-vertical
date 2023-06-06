@@ -31,8 +31,8 @@ PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
-MapTop:     .byte   0                       ; map row at top of the screen
-MapOff:     .byte   0                       ; offset into tile the map row at top of screen in
+TopRow:     .byte   0                       ; map row at top of the screen
+TopOff:     .byte   0                       ; offset into tile the map row at top of screen in
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
@@ -159,14 +159,14 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr buildmap        ; set up map data (in bank 2)
             jsr buildgfx        ; define graphics assets
             ;jsr buildsfx        ; define sound effects
-            jsr setupenv        ; arm interrupts
             lda #232            ; top map row when we start (makes bottom row 255)
-            sta MapTop
+            sta TopRow
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-13)
             lda #$FC            ; Start down near the bottom
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             lda #$00            
+            sta TopOff          ; 
             sta PlayerYOff      ; this is the Y offset of the player from the top of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
@@ -187,6 +187,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
             jsr paintmap        ; paint visible map
             jsr paintstat       ; paint status area
+            jsr setupenv        ; arm interrupts
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
 

@@ -6,18 +6,16 @@
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
 ; called always but if no scrolling is needed, it exits quickly with carry clear.
 ; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
-fixscroll:  clc
+fixscroll:  clc                 ; clear carry signifies both "scroll up" and "was quick"
 NeedScroll = *+1
             lda #INLINEVAR
             beq noscroll
             bmi scrolldn
-            jsr scrollmap       ; scroll the screen (using smooth scroll) (up/clc)
-            sec                 ; tell eventloop we took some time
-            jmp fixedscr
+            bcc scrollup        ; branch always
 scrolldn:   sec
-            jsr scrollmap       ; scroll the screen (using smooth scroll) (down/sec)
+scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll) (down/sec)
             sec                 ; tell eventloop we took some time
-fixedscr:   lda #$00
+            lda #$00
             sta NeedScroll      ; we no longer need a scroll
 noscroll:   rts
 
@@ -59,10 +57,10 @@ gfxinit:    lda #$82            ; map is bank 2
             sta ZPtrA           ; tile graphics low byte
             rts
 
-; paint a single line
+; paint a single line from cached tiles
 ; call with:
 ; - X holding the physical graphics line (0-BF)
-; - Y holding the offset into tile we should draw
+; - Y holding the offset into tile we should draw onto the physical graphics line
 ; assumes:
 ; - tile cache holds the tile graphics addresses for tiles including this line
 ; - ZP is $1A00
@@ -126,7 +124,7 @@ paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             jsr gfxinit         ; set up pointers and switch banks
             lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
-            lda MapTop          ; map line of the top row on the screen
+            lda TopRow          ; map line of the top row on the screen
             clc
             adc #22             ; +22 to get to map line of bottom row
             sta ZCurrMapL       ; becomes the current line
@@ -154,7 +152,7 @@ PMBankSave = *+1
             sta R_BANK
             rts
 
-; imagine you are at MapTop 230, MapOff 0
+; imagine you are at TopRow 230, TopOff 0
 ; and you increase the nudge, which means you are now drawing from 1-7 and then 0.
 ; this has the effect of scrolling the map up the screen
 ; you need to copy line 0 of 231 to line 0 of 230.
@@ -162,7 +160,7 @@ PMBankSave = *+1
 ; there, you need to copy line 0 of 253 (230+23) into line 0 of 252 (230+22)
 ; nudge went from 0 to 1 and we are doing everything wrt the lowest of these, 0.
 
-; now imagine you are back at MapTop 230, MapOff 0
+; now imagine you are back at TopRow 230, TopOff 0
 ; and you decrease the nudge, which means you are now drawing 7 and then 0-6.
 ; this should have the effect of scrolling the map down the screen
 ; you need to copy line 7 of 229 to line 7 of 230, and so on down the screen.
@@ -197,15 +195,15 @@ PMBankSave = *+1
 ; draw map line for graphics line 00 + nudge on graphics line 08 + nudge
 
 ; as usual, it is hard to wrap my head around this.
-; Suppose MapTop is 232 and MapOff is 0, where we start.
+; Suppose TopRow is 232 and TopOff is 0, where we start.
 ; and the river scrolls down.
 ; so the old line 08 is now displayed on line 09
-; MapOff becomes 7, need to draw new top line on line 0F (will draw at top)
-; so I load in the map line 231 (post-move MapTop), and buffer line 7 (post-move MappOff) into 0
+; TopOff becomes 7, need to draw new top line on line 0F (will draw at top)
+; so I load in the map line 231 (post-move TopRow), and buffer line 7 (post-move TopOff) into 0
 ; copy all the line 7s down from end of screen to top 
 ; if it were going the other way,
-; MapOff becomes 1, MapTop stays 232.
-; now I need to copy from top to bottom, and then buffer line MapTop+24's line old offset (0) into 0
+; TopOff becomes 1, TopRow stays 232.
+; now I need to copy from top to bottom, and then buffer line TopRow+24's line old offset (0) into 0
 ; this is pretty doable.
 
 ; scrollmap will effect a vertical movement of the map regions of the screen.
@@ -217,11 +215,10 @@ PMBankSave = *+1
 
 scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
-            lda #$00
-            ror                 ; put carry in hi bit
+            ror                 ; put carry in hi bit (the other 7 bits don't matter for anything)
             sta SMIncDec
             jsr gfxinit         ; go to bank 0, where (hires) graphics memory lives
-            lda MapOff          ; current nudge value (offset into map's top line that we're at)
+            lda TopOff          ; current nudge value (offset into map's top line that we're at)
             bcs smdecn          ; branch away if we are decreasing nudge
             ; we are increasing nudge (hero downward, map upward)
             sta SMNVal          ; use current (smaller) offset for copylines
@@ -229,20 +226,20 @@ scrollmap:  lda R_BANK          ; save bank
             and #$07
             bne smincnow        ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
-            inc MapTop
-smincnow:   sta MapOff          ; store new nudge value in map offset variable
+            inc TopRow
+smincnow:   sta TopOff          ; store new nudge value in map offset variable
             jmp smdraw
             ; we are decreasing nudge (hero upward, map downward)
 smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
-            dec MapTop          ; move top of map up one line
+            dec TopRow          ; move top of map up one line
             lda #$07
-            sta MapOff          ; set offset to 7 in the new map line
+            sta TopOff          ; set offset to 7 in the new map line
             sta SMNVal          ; use new (smaller) offset for copylines
             bne smdraw          ; branch always
             ; nudge will not wrap, so map line will not change
-smdecnow:   dec MapOff
-smdraw:     ldx MapTop
+smdecnow:   dec TopOff
+smdraw:     ldx TopRow
             jsr tilecache       ; cache the tiles for top line
             ldy SMNVal          ; line of tile to draw
             ldx #$00            ; draw to raster 0
@@ -259,7 +256,7 @@ SMBankSave = *+1
 upddone:    lda #INLINEVAR      ; restore the bank
             sta R_BANK
             ; adjust the smooth scroll offset
-            ldy MapOff
+            ldy TopOff
             lda TwelveBran, y
             sta NudgeVal
 NudgeVal = *+1                  ; smooth scroll parameter x $0C
