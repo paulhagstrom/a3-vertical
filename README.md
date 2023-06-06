@@ -33,6 +33,11 @@ ca65 a3wheel.s
 ld65 -o a3wheel.bin -C apple3big.cfg a3wheel.o
 ac -d a3wheel.po SOS.INTERP
 ac -p a3wheel.po SOS.INTERP bin < a3wheel.bin
+
+ca65 lazyriver.s
+ld65 -o lazyriver.bin -C ../apple3big.cfg lazyriver.o
+ac -d lazyriver.po SOS.INTERP 
+ac -p lazyriver.po SOS.INTERP bin < lazyriver.bin
 ```
 
 I use Applecommander, requires java, but brew install might be sufficient
