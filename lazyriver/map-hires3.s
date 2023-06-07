@@ -233,7 +233,7 @@ scrollmap:  lda R_BANK          ; save bank
             inc TopRow
 smincnow:   sta TopOff          ; store new nudge value in map offset variable
             lda TopRow
-            adc #22             ; carry is still known to be clear, new line is in bottom row
+            adc #21             ; carry is still known to be clear, new line is in bottom row
             tax
             bcc smdraw          ; branch always
             ; we are decreasing nudge (map scrolls downward)
@@ -254,7 +254,10 @@ smdraw:     jsr tilecache       ; cache the tiles for map line
             ldx #$00            ; draw to raster 0
             jsr paintline
             ; now copy everything to visible screen regions
-            ; TOOD - stall until we get to VBL?
+            ; stall for VBL
+            lda VBLTick
+smstall:    cmp VBLTick
+            beq smstall
 SMNVal = *+1
             ldy #INLINEVAR      ; lower of current nudge and new nudge
 SMIncDec = *+1

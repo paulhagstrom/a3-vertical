@@ -66,7 +66,7 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
 offtick:
             jsr fixscroll                   ; check if map scroll is needed and do it if so
             bcs eventloop                   ; go back around if we spent some time
-            jsr drawstatus                  ; redraw score
+offblit:    jsr drawstatus                  ; redraw score
             jmp eventloop
             
 alldone:    lda #$7F                        ;disable all interrupts
