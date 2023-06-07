@@ -323,6 +323,14 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; notes: interrupts too tight to use stack for speed increase here
 ; zero page is used for blitting speed, so variables below can't be in ZP
 
+; this still seems to be too slow to finish in the VBL
+; we should have about 9000 cycles in VBL, but it is flickering
+; will need to see what can be done to speed this up.
+; maybe generate some unrolled loops. We have to draw 23 lines, move 80 bytes per line
+; so it is super tight, not sure how sprites will figure into this
+; might try page flipping, but that would require drawing twice as many lines
+; still 4 times fewer than manual scrolling would require, but not 8.
+
 ScrollDir:  .byte 0             ; preserve entry carry in high bit
 LinesLeft:  .byte 0             ; lines remaining to draw
 
