@@ -64,9 +64,20 @@ drawstatus: lda #<TextPageA
             sta ZNumPtr + 1
             lda #$8F
             sta ZNumPtr + XByte
+            ; DEBUG - BEGIN - REMOVE LATER
+            lda TopRow
+            jsr drawnumber
+            dec ZNumPtr
+            dec ZNumPtr
+            lda TopOff
+            jsr drawnumber
+            dec ZNumPtr
+            dec ZNumPtr
+            lda SMIncDec
+            jmp drawnumber
+            ; DEBUG - END
             ldx #$02
 :           lda GameScore, x
-            lda TopRow          ; DEBUG
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr

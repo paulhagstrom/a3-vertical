@@ -95,12 +95,12 @@ handlekey:
             bne :+
             lda #$00
             sta VelocityX
-            lda #$80
+            lda #$FF
             sta VelocityY
             jmp keydone
 :           cmp #$CA            ; J (left)
             bne :+
-            lda #$80
+            lda #$FF
             sta VelocityX
             lda #$00
             sta VelocityY
@@ -167,6 +167,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             lda #$00            
             sta TopOff          ; 
+            sta NeedScroll      ;
             sta PlayerYOff      ; this is the Y offset of the player from the top of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught

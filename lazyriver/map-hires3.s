@@ -6,14 +6,16 @@
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
 ; called always but if no scrolling is needed, it exits quickly with carry clear.
 ; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
+; value for NeedScroll is: 0=stop, neg=map down/dec off, pos=map up/inc off
+
 fixscroll:  clc                 ; clear carry signifies both "scroll up" and "was quick"
 NeedScroll = *+1
-            lda #INLINEVAR
+            lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
             beq noscroll
             bmi scrolldn
             bcc scrollup        ; branch always
 scrolldn:   sec
-scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll) (down/sec)
+scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll)
             sec                 ; tell eventloop we took some time
             lda #$00
             sta NeedScroll      ; we no longer need a scroll
@@ -47,6 +49,7 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
 
 ; set up pointers and banks for graphics interaction
 ; bank 0 for graphics, ZPtrA for map tiles
+; X, Y, carry survive
 gfxinit:    lda #$82            ; map is bank 2
             sta ZMapPtr + XByte
             sta ZPtrA + XByte
@@ -217,30 +220,36 @@ scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
             ror                 ; put carry in hi bit (the other 7 bits don't matter for anything)
             sta SMIncDec
+            asl                 ; restore carry
             jsr gfxinit         ; go to bank 0, where (hires) graphics memory lives
             lda TopOff          ; current nudge value (offset into map's top line that we're at)
             bcs smdecn          ; branch away if we are decreasing nudge
-            ; we are increasing nudge (hero downward, map upward)
+            ; we are increasing nudge (map scrolls upward)
             sta SMNVal          ; use current (smaller) offset for copylines
-            adc #$01            ; carry is known to be clear
+            adc #$01            ; carry is known to be clear, increase nudge
             and #$07
             bne smincnow        ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
             inc TopRow
 smincnow:   sta TopOff          ; store new nudge value in map offset variable
-            jmp smdraw
-            ; we are decreasing nudge (hero upward, map downward)
+            lda TopRow
+            adc #22             ; carry is still known to be clear, new line is in bottom row
+            tax
+            bcc smdraw          ; branch always
+            ; we are decreasing nudge (map scrolls downward)
 smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
             dec TopRow          ; move top of map up one line
             lda #$07
             sta TopOff          ; set offset to 7 in the new map line
             sta SMNVal          ; use new (smaller) offset for copylines
-            bne smdraw          ; branch always
+            bne smdrawtop       ; branch always
             ; nudge will not wrap, so map line will not change
 smdecnow:   dec TopOff
-smdraw:     ldx TopRow
-            jsr tilecache       ; cache the tiles for top line
+            lda TopOff
+            sta SMNVal
+smdrawtop:  ldx TopRow
+smdraw:     jsr tilecache       ; cache the tiles for map line
             ldy SMNVal          ; line of tile to draw
             ldx #$00            ; draw to raster 0
             jsr paintline
@@ -250,7 +259,7 @@ SMNVal = *+1
             ldy #INLINEVAR      ; lower of current nudge and new nudge
 SMIncDec = *+1
             lda #INLINEVAR      ; hi bit reports status on entry of carry
-            rol                 ; send it back to the carry bit
+            asl                 ; send it back to the carry bit
             jsr copylines
 SMBankSave = *+1
 upddone:    lda #INLINEVAR      ; restore the bank
@@ -314,19 +323,19 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ScrollDir:  .byte 0             ; preserve entry carry in high bit
 LinesLeft:  .byte 0             ; lines remaining to draw
 
-copylines:  bcc :+              ; branch away if we are increasing nudge
+copylines:  bcc clincnud        ; branch away if we are increasing nudge
             ; decreasing smooth scroll parameter ("nudge")
             tya                 ; this should be the new nudge value (current nudge-1)
             adc #$B7            ; first target line is at the bottom (carry is set, we are adding $B8)
             tay
-            sty ScrollDir       ; use for branching to subtract
-            bmi lmsettrg        ; branch always
+            sty ScrollDir       ; use for branching to subtract (negative number)
+            bmi clsettrg        ; branch always
             ; increasing smooth scroll parameter ("nudge")
-:           tya                 ; for this we want the current nudge value (later will become this + 1)
-            adc #$08            ; first target line is at the top
+clincnud:   tya                 ; for this we want the current nudge value (later will become this + 1)
+            adc #$08            ; first target line is at the top, carry known to be clear
             tay
-            sty ScrollDir       ; use for branching to add
-lmsettrg:   lda #22             ; move 23 lines (last copying from buffer), countdown in LinesLeft
+            sty ScrollDir       ; use for branching to add (positive number)
+clsettrg:   lda #22             ; move 23 lines (last copying from buffer), countdown in LinesLeft
             sta LinesLeft
             lda YHiresS, y      ; set the first target line based on start line we were passed
             sta TargS           ; target low, end of the line
@@ -335,18 +344,18 @@ lmsettrg:   lda #22             ; move 23 lines (last copying from buffer), coun
             clc
             adc #$20            ; compute HB
             sta TargHB          ; target B high
-lmnext:     lda ScrollDir       ; restore carry from entry
+clnext:     lda ScrollDir       ; restore carry from entry
             asl
             tya
-            bcs :+              ; we are subtracting, go do that
+            bcs clsub           ; we are subtracting, go do that
             adc #$08            ; source is 8 lines after target
-            bcc lmprep          ; branch always
-:           sbc #$08            ; source is 8 lines before target
-lmprep:     tay
+            bcc clprep          ; branch always
+clsub:      sbc #$08            ; source is 8 lines before target
+clprep:     tay
             pha                 ; remember source line we computed for the next iteration's target
-lmsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
+clsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
             sta SourceS
-            lda YHiresLA, y      ; source start-of-line low byte
+            lda YHiresLA, y     ; source start-of-line low byte
             sta SourceA         ; modify code in upcoming loop (page 1 source)
             sta SourceB         ; modify code in upcoming loop (page 2 source)
             lda YHiresHA, y
@@ -361,22 +370,22 @@ TargS = *+1
             ldx #INLINEVAR      ; start x at the end of the target line
             ldy #$27            ; start y at the end of the source line
 SourceA = *+1
-lmsrca:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
+clsrca:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
             sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
             dey
-            bpl lmsrca
+            bpl clsrca
 TargHB = *+1
             lda #INLINEVAR      ; point ZP at target B page
             sta R_ZP
             ldx TargS           ; start x at the end of the target line
             ldy #$27            ; start y at the end of the source line
 SourceB = *+1
-lmsrcb:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
+clsrcb:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
             sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
             dey
-            bpl lmsrcb
+            bpl clsrcb
             ; the source we just used will now become the target for the next one
 SourceS = *+1
             lda #INLINEVAR
@@ -386,14 +395,14 @@ SourceS = *+1
             lda SourceB + 1
             sta TargHB
             dec LinesLeft
-            beq lmlast          ; last line source is an offscreen buffer
-            bmi lmdone          ; if we have done everything, exit
+            beq cllast          ; last line source is an offscreen buffer
+            bmi cldone          ; if we have done everything, exit
             pla                 ; lines remain, compute next source
             tay
-            bne lmnext          ; branch always
-lmdone:     lda #$1A            ; restore ZP to $1A00
+            bne clnext          ; branch always
+cldone:     lda #$1A            ; restore ZP to $1A00
             sta R_ZP
             rts
-lmlast:     ldy #$00            ; offscreen buffer line is line 0
+cllast:     ldy #$00            ; offscreen buffer line is line 0
             pla                 ; toss out saved line
-            jmp lmsetsrc
+            jmp clsetsrc

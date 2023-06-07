@@ -13,6 +13,9 @@
 ; Each line fills the screen, but not more, so there are 20 tiles across.
 ; With 256 lines, this means we have 5120 ($1400) bytes.
 
+; TODO - later compute a flow vector so that speed is prortional to width
+; TODO - consider maybe adding depth as well
+
 TileLand:   .byte   C_LAND_A, C_LAND_B, C_LAND_C, C_LAND_D
 TileWater:  .byte   C_WATER_A, C_WATER_B, C_WATER_C, C_WATER_D
 ShoreL:     .byte 0         ; current tile X-coordinate of left shore

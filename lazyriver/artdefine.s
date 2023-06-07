@@ -128,6 +128,7 @@ xlatequad:
 ; will be done using nibble-aligned colors, with the last nibble unused.
 
 ; Map graphics
+; TODO - later see if coastlines can join better to be smoother
 
 MapTiles:
 ; Land 1
