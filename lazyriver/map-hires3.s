@@ -1,6 +1,141 @@
 ; lazyriver
 ; A3 hires display map routines
 
+; if we are scrolling the whole screen minus the top line, here is what we need:
+; we need to copy 23 lines (one of which comes from a buffer)
+; each line has 80 bytes (4 per 7 pixels)
+; LDA absolute,y and STA Zero,x is 4+4=8 cycles.  16 to cover both pages.
+; 368 cycles to do 23 lines if unrolled (both pages)
+; dex dey is 4 cycles, branch back taken is 3.
+; So, can do 375 per column
+; 40 columns, 15000.  And that is too many for a VBL even unrolled that way.
+; we can buy some time if we start at the top and go down (racing the beam)?
+; PHA is 3 cycles. Can I halt interrupts? It would hurt the sound.
+; how much can I unroll?
+; STA ZP is 3 LDA absolute is 4, 7 cycles, 5 bytes.
+; A full line would be 80 of those. 560 cycles, 400 bytes.
+; 23 of those would be 12880 cycles, 9200 bytes, about $2400.
+; so we could fill page 2 with unrolled instructions, and it would still take two VBLs.
+; we have around 9000 cycles during VBL, probably less due to sound interrupts.
+; the only way to move that many bytes without tearing is going to be page flipping.
+; due to how the smooth scrolling works, it's going to look bad if it gets half drawn
+; before the offset is changed.
+;
+; so. Page flipping.  That's going to look super smooth anyway, probably.
+; put odd offsets on page 1, even ones on page 2.
+; if we start at offset 0, we'll be looking at page 2.
+; paint both pages, page 1 at offset 1, page 2 at offset 0.
+; to scroll map down (so not using what we already have on page 1)
+; offset decreases by 2 from what was drawn already.
+; we draw lines 7-8 of new lower map row in lines 0-1
+; we copy lines 7-8 of row 23 to lines 7-8 of row 24, 22 to 23, 1 to 2
+; and line 0-1 to lines 7-8 of row 1
+; then at VBL flip to page 1, set offset to 7
+; this probably will take, even at high speed, 4 VBLs to do.  So we're down to 7.5 fps.
+; fast for an Apple, but still kind of slower than I'd hoped.
+; plus we need to do sprite background preservation, and this loses a lot of memory we'd otherwise
+; have had. 2, 4, 6, 8, we're already at $A000.
+; 
+; LDA immediate 2 PHA 3, that's not too bad. 5 per. Would be same for sta ZP.
+; PHA saves a byte but isn't interrupt-friendly
+; LDA immediate 2 STA R_ZP 4 LDX immediate 2 TSX 2 = 10 (or 6 without the stack part)
+; per half-line: 200 cycles 160 bytes for first page, 6 and 5 to switch,
+; so per line 406 cycles, 325 bytes.
+; for 23 lines, 9338, just makes it, maybe. 7475 bytes, under $2000.
+; so suppose I buffer all the lines into this executing code first, could
+; still use stack pushing or ZP writing to do it.  But I can take 2-3 VBLs to do it.
+; PHA technique would allow more bytes to stay constant though, just need to push the
+; data in, change the stack and pointer for different lines
+; LDX #$-- STA R_ZP LDX -- TSX LDA #$-- PHA LDA #$-- PHA...
+; fill in two (page, stack pointer for destination, then just read and buffer
+; feels complicated.  Would page flipping be less complicated?
+; I think it would, plus it would allow for more flexibility with sprites.
+; if it takes 10 VBLs to prepare to switch, that's still 3fps.
+; have to figure out how to save the background so we don't need to recompute it.
+; have to preserve 400-427 and 800-27, but otherwise 300-FFF is probably available.
+; game is from A000 up and graphics are from 2000-9FFF.
+
+; unrelated thinking aloud, if I write up a 2-line copylines, maybe this parallax
+; thing can work again? Front pane shifts 2 lines at a time, but only one, 4 possible offsets.
+; back plane is fully redrawn every time, has to be.  But it's the back plane so it
+; is narrower.  Maybe draw middle 20 bytes, 96 lines, then front 80 bytes, 24 lines.
+; still is going to need page flipping to work, but the speedup from 80x96 (or 80x192)
+; to 80x24 should be significant.
+
+; another unrelated thinking aloud, I could maybe use a lower-resource graphics mode.
+; but can't page flip the 16-color hires one.  Might be able to get it to work within.
+; VBL. Can only set colors in groups of 7.  This would provide a higher resolution (280)
+; but wouldn't really change the blitting resource requirements, still requires filling
+; all of $2000-27 and $400-27 per line.  But can scroll.  Same for super hires, even
+; more detail but monochrome, same blitting requirements.  The only lower resource
+; version would be A2 graphics, which would only require blitting 40/line instead of 80.
+; medres would work ok for river and banks, but the sprites would be pretty constrained
+; colorwise (blue background, per-line color foreground).  Could try that, but most of
+; the same tech would be involved.
+
+; there is actually a ton of drawing time while the screen is being painted.
+; 192 lines, 65 cycles each, 12480 cycles total.
+; 70 lines of VBL, 4550 cycles at 1MHz, 9100 cycles at 2MHz
+; so if I can keep ahead of the beam... problem is the copying goes against the beam,
+; though, if the screen is scrolling down.  So, maybe shift the orientation and force
+; up scrolling (as an experiment at least), with the logs traveling downward?
+; 2 ldx
+; 2 ldy
+; 4 lda abs,y
+; 4 sta zp,x
+; 4 lda abs,y
+; 4 sta zp,x
+; 2 dex
+; 2 dey
+; 3 branch taken
+; so for one line, 4 + (40 * (16 + 7)) - 1 = 923 cycles.
+; or 3 + 40*(16*1 + 7)
+; but for a second line, 4+(40*(32+7))-1 = 1563 cycles (not 1846, 283 fewer)
+; eight lines: 5403, five lines: 
+; twelve lines 3 + 40*(16*12 + 7): 7963.
+; 13: 8603
+; so we just might be able to do the top half of the screen during VBL (first 12 lines)
+; and then the bottom half before the beam catches up.  We would have 65*(8*13) = 6760
+; cycles I think before it gets to the top of the undrawn region.
+; and then we have 11 more lines to draw, should take 7323 cycles. Close but not quite.
+; if I unroll harder
+; 2+4 set ZP
+; 2 lda #
+; 3 sta ZP
+; x40 = 200 cycles, 160 bytes
+; repeat = 400 cycles per line, 320 bytes
+; can just about get everything in though in that case. 9200 cycles if interrupts
+; are stopped.  Sound interrupts might eat around 700 cycles.
+; 
+; sei (+2, 1)
+; point ZP/stack, set stack pointer (+10, 8)
+; lda # pha (+5, 3) 40 = (+200, 120)
+; point ZP/stack, set stack pointer (+10, 8)
+; lda # pha (+5, 3) 40 = (+200, 120)
+; point ZP/stack, set stack pointer (+10, 8)
+; cli (+2, 1)
+; +2, 1 in, +12, 9 out, +420, 256 per line
+; sound would be about 65 cycles
+; 4 lines, +1680, 1024
+; 3 lines, +1260, 768
+; so:
+; in +2, 1
+; draw 4 lines +1680, 1024
+; do sound +65
+; x5 (gets to 20 lines drawn)
+; out +12, 9
+; 
+; so: +8749, 5130ish (not counting sound calls) gets 20 drawn and 5 sounds
+; all still within VBL, and should be able to get the last three out before beam arrives.
+; last three +1260, 768 -- only the first might scrape by before clock downshifts.
+; problem with sound is that it will be "about" 65 cycles, conditions vary its length
+; using a timer will burn many cycles though, probably around 550-650.
+; stuffing the blitter will of course take well longer than a cycle.
+; full screen pass (draw+VBL) is about 21580 cycles. Maybe it can almost fit.
+; then need to draw sprites (erase, shift lines, mask, save background, draw)
+; then finally VBL->set graphics modes and blit
+;
+
 ; movement processing happens on the VBL downbeat, so wait until the next one to 
 ; update graphics.
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
