@@ -1,6 +1,113 @@
 ; lazyriver
 ; A3 hires display map routines
 
+; Smooth scrolling can dramatically reduce the amount of data that needs to
+; be moved to scroll the entire screen, since you only need to move 24 lines
+; instead of 192.  However, even moving 24 lines is a lot of data, and it is
+; impossible to move all those bytes within the space of a single VBL, meaning
+; that there will be tearing.  Fully unrolling loops and using stack relocation
+; tricks can get close, but to do anything but scroll (like, to have sprites)
+; would exhaust the time we have between screen refreshes.  Plus, a fully
+; unrolled loop is essentially a very space-inefficient framebuffer for an
+; eighth of the screen, and it will complicate sprite handling (which needs
+; to use the other lines too).  So, rather than trying to move data during
+; VBL, we'll use the maximally efficient framebuffer we already have: page 2.
+; A3 Hires allows for page flipping, with page 1 in $2000-5FFF and page 2 in
+; $6000-9FFF.  That's a lot of memory for graphics, but the upside is: no
+; tearing and very little cycle counting.  We just draw on the page we're not
+; looking at until we're done, then wait for VBL and flip which page we're
+; looking at.
+;
+; To use smooth scrolling together with page flipping means that we lose half
+; of the advantage smooth scrolling gave us, but it's still 4x fewer bytes to
+; move than without smooth scrolling (vs. 8x fewer without page flipping).
+; That is, we have to move the invisible page twice potentially.
+; Note: if we are scrolling less of the screen (as in diskhero), it is more
+; achievable.  There, there are only 8 lines to copy.  What's different here
+; is that we are going for essentially a full-screen (184 line) scroll.
+;
+; One strategy I considered was to use page 1 for even offsets and page 2
+; for odd offsets, which would work relatively well if the background always
+; continually scrolls at full speed (one line per game clock).  But if the
+; background ever stops scrolling, then we're not flipping and so we need to
+; erase and redraw all the sprites in the confines of a single VBL.  This
+; wpi;d only allow for maybe 5 sprites before we run out of time.
+;
+; A more flexible strategy that will allow for more sprites without tearing
+; is to use the pages as just framebuffers, kept basically in sync and always
+; alternating whether the background scrolls or not.  This still will often
+; require shifting 2 lines on the invisible page.  Ultimately this will wind
+; up be simpler to handle.
+;
+; For sprites: We need them to be erased by the time we scroll the
+; background.  The page-flipping strategy will thus look like this:
+;
+; at VBL downbeat, flip to page A
+; erase sprites on page B
+; scroll page B to match page A (if they don't already match)
+; do movement computations (scroll? sprites? collisions?)
+; scroll page B if needed
+; draw sprites on page B
+; (swap B and A meanings and repeat)
+;
+; My guess on the speed here is that it will take 2 refreshes to do both
+; scrolls, maybe 2 more to erase and draw the sprites, maybe 1 more to do
+; movement computations.  So the guess is that we'll wind up with a frame
+; swap every 5 refreshes, or 6fps.  That should look pretty good on an
+; 8-bit machine.  VBL is about 9100 cycles, screen painting 12480, with
+; 520 cycles spent every 8 lines during screen painting.  So given that
+; we have the top 8 lines in text mode, we have about 9620 cycles after
+; VBL starts before the beam hits the graphics again, minus how many get
+; eaten by interrupt handling (for, e.g., sound).  However, by using page-
+; flipping, we don't really need to care much about the beam, we just have
+; about 21580 cycles per refresh from which to figure how our fps is.
+;
+; A sprite will be a 7x8 block, which corresponds to 32 bytes.  But given that
+; it can be at any x-coordinate, we need to consider it to be a 14x8 block,
+; 64 bytes.  We will pre-shift them so that we have these bytes ready to go.
+; To put a sprite at an absolute y-coordinate on the screen requires taking
+; the smooth scroll parameter into account.  If scroll is set to 2 and we
+; want to put it on lines 5-C, then we have to start drawing on line 7.
+;
+; sprite line 0 - display line 5 - adjusted line 7
+; sprite line 1 - display line 6 - adjusted line 0
+; sprite line 2 - display line 7 - adjusted line 1
+; sprite line 3 - display line 8 - adjusted line A
+; sprite line 4 - display line 9 - adjusted line B
+; sprite line 5 - display line A - adjusted line C
+; sprite line 6 - display line B - adjusted line D
+; sprite line 7 - display line C - adjusted line E
+;
+; That is, to draw on display line y, we draw to
+; int(y/8) + (y+offset)%7
+;
+; To draw the sprite itself, we need to compute the targets and then move
+; the data.  The data is 64 bytes, and we want to load the background, stash
+; it somewhere, apply a mask, draw, and then store.  That's minimally
+; in the ballpark of 1280 cycles per sprite, probably will be somewhat
+; more.
+;
+;
+;
+; even with the assistance of smooth scrolling, we have a LOT of data to move
+; during VBL and before the beam catches up.  We are scrolling the whole screen
+; which means we need to move 80 bytes of data per line for 23 lines.
+; That's 1840 bytes to move, and given that we have 9100 cycles during VBL
+; and loads and stores take 3-4 cycles each, it's clear that extreme measures
+; are required to move all that data in time.  Since it is impossible to move
+; that much data during VBL, we're going to bank on getting far enough down the
+; screen during VBL that the beam won't catch up before we finish.  We have
+; 12480 cycles at 1MHz while the screen is being painted, it gets 8 lines every
+; 520 cycles.
+
+; page flipping would be an option, but it reduces the amount of assistance we
+; get from smooth scrolling (and it uses up a lot of the available memory).
+; current best option is to have an unrolled dedicated blitter.
+; using a relocated stack to push with, and immediate mode data loading,
+; we can move one byte using 3 instruction and 5 cycles.  That gives us
+; a ballpark of 5520 bytes for the blitter, 9200 cycles.
+
+
 ; if we are scrolling the whole screen minus the top line, here is what we need:
 ; we need to copy 23 lines (one of which comes from a buffer)
 ; each line has 80 bytes (4 per 7 pixels)
@@ -135,7 +242,152 @@
 ; then need to draw sprites (erase, shift lines, mask, save background, draw)
 ; then finally VBL->set graphics modes and blit
 ;
+; one thing that occurs to me.  If we're doing all the lines, do we need to stop at #40?
+; what if we did 6 lines at a time, from 0-240?  That might wind up being legit.
+; first 8 lines are low 00, next 8 are low 80, repeats for first 64 lines.
+; then 28 A8, then D0 50.  In blocks of 64 lines, it goes 20, 20, 21, 21, 22, 22, 23, 23.
+; so if I'm copying line 10 to 08, 18 to 10, etc., it's n to n-8.
+; 2000 holds line 0 (0-27), 40 (28-4F), 80 (50-77), 08 (80-A7), 48 (A8-CF), 88 (D0-F7)
+; 2000: 00 40 80 08 48 88
+; 2100: 10 50 90 18 58 98
+; 2200: 20 60 A0 28 68 A8
+; 2300: 30 70 B0 38 78 B8
+; 
+; 2100->2080, 2180->2100, 2200->2180, 2280->2200, 2300->2280, 2380->2300
+; 2028->2380, 20A8->2028, 2128->20A8, 21A8->2128, 2228->21A8, 22A8->2228, 2328->22A8, 23A8->2328
+; 2050->23A8, 20D0->2050, 2150->20D0, 21D0->2150, 2250->21D0, 22D0->2250, 2350->22D0, 23D0->2350
+; new line goes into 23D0-23F7.
+; generally speaking, I'm copying something to $80 before it.
+; so there's an antecedent problem if I try to do this will full pages, but maybe I can do it with $80s.
+; If I take X from 77 to 0 and copy
+; 2000+x -> 2380+x ([2000->2380], 2028->23A8, 2050->23D0) ([0->B8], 40->38, 80->78)
+; 2080+x -> 2000+x ([2080->2000], 20A8->2028, 20D0->2050) ([8->0], 48->40, 88->80)
+; 2100+x -> 2080+x (2100->2080, 2128->20A8, 2150->20D0) (10->8, 50->48, 90->88)
+; 2180+x -> 2100+x (2180->2100, 21A8->2128, 21D0->2150) (18->10, 58->50, 98->90)
+; 2200+x -> 2180+x (2200->2180, 2228->21A8, 2250->21D0) (20->18, 60->58, A0->98)
+; 2280+x -> 2200+x (2280->2200, 22A8->2228, 22D0->2250) (28->20, 68->60, A8->A0)
+; 2300+x -> 2280+x (2300->2280, 2328->22A8, 2350->22D0) (30->28, 70->68, B0->A8)
+; 2380+x -> 2300+x (2380->2300, 23A8->2328, 23D0->2350) (38->30, 78->70, B8->B0)
+; should save a few cycles.
+; but does it work? Do I ever overwrite something I need later?
+; if I start at 2080, I'm ok to 2380, but I overwrite 40 and 80 and need those for 2000.
+; I draw the new line at B8.
+; So, it's basically the first line that is at risk, 2000+x
+; I need to do that before 2080+x but it interacts with 2380+x
+; I don't need 0->B8 (though I can use it to draw the new line actually)
+; I don't need 8->0
+; not sure I really gain a lot here.
+; might as well just go from 27 to 0 on 23 different unrolled lines.
+; but if I unroll fully then I can't finish in the VBL. As detailed earlier.
+; 
+; for simplicity I would rather avoid stuffing a blitter if I can, seems redundant
+; to move the data twice.
+;
+; and looking at atomic defense it really seems like AH didn't try all that hard.
+; why does HIS code work?
+; 
+; ok, let me look again, why can't I just do 2000<2080.23FFM, essentially?
+; that's what I was trying to determine above, right?  How could this not work?
+; the only issues are writing line 40 to 38 and 80 to 78 since those get overwritten.
+; can I cache those before VBL?
+; so, stash 2028-20F7 somewhere, VBL.
+; point ZP at 20
+; ldy #$04      ;2
+; page:
+; ldx #$80      ;2
+; bne skip      ;3
+; up:
+; ldx #$00      ;2
+; skip:
+; lda $80, x    ;4
+; sta $00, x    ;4
+; inx           ;2
+; bne up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
+; bit ZP        ;4 test to see if we are in $40 or $20
+; bvc inhi      ;3/2 branch if in $20
+; inc ZP        ;6 if we're in $40, we want to shift to $21
+; inhi:
+; lda ZP        ;4
+; eor #$60      ;2 switch between $20 and $40
+; sta ZP        ;4
+; dey           ;2
+; bne page      ;3/2 [9+2 overhead]
+; 
+; ok, that seems about as tight as I can make something with this logic.
+; inner loop: 13 per loop, 256 passes, moves 256 bytes. 3328 cycles.
+; that sets a floor. We need to move 21-20 22-21 23-22 41-40 42-41 43-41
+; of easy movement, which is 6 pages, 19968 minimum.
+; how can I move 256 bytes faster?
+; I can use PHA if I can count back.
+; point stack at $2000
+; ldx #$7f      ;2
+; txs           ;2
+; skip:
+; lda $2080, x  ;4
+; pha           ;3
+; dex           ;2
+; bpl skip      ;2/3 [12 per loop, 256 loops, 3072 cycles]
+; so floor is now 18432, a little better.
+; if I unroll this without having to stuff the blitter
+; point stack to $2000, pointer to $7F
+; lda $21FF     ;4
+; pha           ;3
+; lda $21FE     ;4
+; pha           ;3
+; ... 
+; lda $2100     ;4
+; pha           ;3
+; total 7 cycles 4 bytes per byte moved, 1792, 1024 to move 256 bytes.
+; that's looking good.  If I move 8 of these, that's 14336, 8192.
+; I can get 5 done during VBL at basically the theoretical maximum speed.
+; but to get a different offset, I need to write one hi byte per byte moved
+; too into the blitter.  I have to move 1024 bytes.  So just writing is
+; 4096 cycles.
+; that's not quite the theoretical maximum, because I could
+; stuff the blitter with values too, then it would be
+; 5 cycles, 3 bytes per byte moved.
+; so 1280, 768 bytes to move 256 bytes.
+; or 10240, 6144 for 8.
+;
+; so 1664 + (11+3228)*3 = 1664 + 9717 = 11381
+; won't make it within VBL, but might it beat the beam?
+; 3239*2 = 6478 + 1664 = 8142
+; so line 30 is the earliest risk.  I think there are 520 cycles per 8 block.
+; so line 30 will arrive within 6 of those. 3120 cycles.
+; so I have to finish by 12220.  Very close.  It works except for lines 38 and 78.
+; I have to get line 38 done by 12740. Gives me around 1359 cycles to do it.
+; Oh, wait. Crap. No. This is only half the job, I need to move the $40 page too.
+; I might be able to use the stack, but it only provides a benefit in one direction.
+; pla is 3 but pha is 4 same as sta zero,x.
+; ZP 20 stack 21, ZP 21 stack 20, ZP 22 stack 23, ZP 23 stack 22
+; 
+; you know, LDA absolute, X is still 4 if it doesn't cross a page boundary.
+; ZP isn't buying me as much as I thought it was.
 
+; so, stash 2028-20F7, 4028-40F7 somewhere, VBL.
+; ldx #$00      ;2
+; up:
+; lda $2080, x  ;4
+; sta $2000, x  ;4
+; lda $2100, x  ;4
+; sta $2080, x  ;4
+; ...
+; lda $2380, x  ;4
+; sta $2300, x  ;4
+; lda $4080, x  ;4
+; sta $4000, x  ;4
+; ...
+; lda $4380, x  ;4
+; sta $4300, x  ;4
+; inx           ;2 [above: 16 per 80 for both pages, 6 80s, 96, so 98*128=12544]
+; bpl up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
+; 
+; seems like I'm trying to break physical laws here getting this to go faster.
+; pla only can work for one scroll direction, and it takes 6 cycles to shift the
+; ZP/stack to somewhere else. Still, 6x23x2 = 276 cycles of overhead to do this
+; line by line, may not be significant if I can save in the big loops.
+; 
+; 
 ; movement processing happens on the VBL downbeat, so wait until the next one to 
 ; update graphics.
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
@@ -552,3 +804,4 @@ cldone:     lda #$1A            ; restore ZP to $1A00
 cllast:     ldy #$00            ; offscreen buffer line is line 0
             pla                 ; toss out saved line
             jmp clsetsrc
+
