@@ -33,6 +33,8 @@ VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 TopRow:     .byte   0                       ; map row at top of the screen
 TopOff:     .byte   0                       ; offset into tile the map row at top of screen in
+PgOneOff:   .byte   0                       ; smooth scroll offset on page 1
+PgTwoOff:   .byte   0                       ; smooth scroll offset on page 2
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
@@ -58,15 +60,21 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
 :           lda #INLINEVAR                  ; wait for game clock to tick
             bpl offtick                     ; based on number of VBLs set in MoveDelay
             ; on the game clock, do movement and update animation
-            jsr domove                      ; game clock has ticked, move everyone around
+            jsr domove                      ; game clock has ticked, move everyone (takes time)
             lda #MoveDelay                  ; reset the game clock
             sta VBLTick
             jmp eventloop                   ; go back up to schedule in all the other stuff
             ; when not on the game clock, do everything else until we hit the game clock again
 offtick:
-            jsr fixscroll                   ; check if map scroll is needed and do it if so
+            ;jsr clrsprite                   ; erase sprites on nonvisible page
+            ;bcs eventloop                   ; go back around if we spent some time
+            jsr syncscroll                  ; scroll nonvisible page to match visible one
             bcs eventloop                   ; go back around if we spent some time
-offblit:    jsr drawstatus                  ; redraw score
+            jsr fixscroll                   ; scroll nonvisible page if movement is needed
+            bcs eventloop                   ; go back around if we spent some time
+            ;jsr setsprite                   ; draw sprites on nonvisible page
+            ;bcs eventloop                   ; go back around if we spent some time
+            jsr drawstatus                  ; redraw score
             jmp eventloop
             
 alldone:    lda #$7F                        ;disable all interrupts
@@ -177,16 +185,21 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta VBLTick
             lda #$01            ; number of logs, this ought to be level-dependent
             sta NumLogs
+            lda #<D_PAGEONE     ; inline in the interrupt handler
+            sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
-            bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
             bit D_TEXT          ; A3 text
-            bit D_NOMIX         ; A3 text
-            bit D_LORES         ; A3 text
+            ; the following are set immediately by VBL/HBL handlers so they don't matter
+            ;bit D_PAGEONE       ; be on page 1.
+            ;bit D_NOMIX         ; A3 text
+            ;bit D_LORES         ; A3 text
             bit SS_XXN          ; start at smooth scroll offset zero
             bit SS_XNX
             bit SS_NXX
-            bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
-            jsr paintmap        ; paint visible map
+            ; due to a MAME bug this is set at HBL, so doesn't matter here 
+            ;bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
+            jsr paintpage       ; paint whole map (onto page 2, nonvisible page)
+            jsr copypage        ; copy page 2 to page 1
             jsr paintstat       ; paint status area
             jsr setupenv        ; arm interrupts
             cli                 ; all set up now, commence interrupting

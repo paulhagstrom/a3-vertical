@@ -87,161 +87,6 @@
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
 ;
-;
-;
-; even with the assistance of smooth scrolling, we have a LOT of data to move
-; during VBL and before the beam catches up.  We are scrolling the whole screen
-; which means we need to move 80 bytes of data per line for 23 lines.
-; That's 1840 bytes to move, and given that we have 9100 cycles during VBL
-; and loads and stores take 3-4 cycles each, it's clear that extreme measures
-; are required to move all that data in time.  Since it is impossible to move
-; that much data during VBL, we're going to bank on getting far enough down the
-; screen during VBL that the beam won't catch up before we finish.  We have
-; 12480 cycles at 1MHz while the screen is being painted, it gets 8 lines every
-; 520 cycles.
-
-; page flipping would be an option, but it reduces the amount of assistance we
-; get from smooth scrolling (and it uses up a lot of the available memory).
-; current best option is to have an unrolled dedicated blitter.
-; using a relocated stack to push with, and immediate mode data loading,
-; we can move one byte using 3 instruction and 5 cycles.  That gives us
-; a ballpark of 5520 bytes for the blitter, 9200 cycles.
-
-
-; if we are scrolling the whole screen minus the top line, here is what we need:
-; we need to copy 23 lines (one of which comes from a buffer)
-; each line has 80 bytes (4 per 7 pixels)
-; LDA absolute,y and STA Zero,x is 4+4=8 cycles.  16 to cover both pages.
-; 368 cycles to do 23 lines if unrolled (both pages)
-; dex dey is 4 cycles, branch back taken is 3.
-; So, can do 375 per column
-; 40 columns, 15000.  And that is too many for a VBL even unrolled that way.
-; we can buy some time if we start at the top and go down (racing the beam)?
-; PHA is 3 cycles. Can I halt interrupts? It would hurt the sound.
-; how much can I unroll?
-; STA ZP is 3 LDA absolute is 4, 7 cycles, 5 bytes.
-; A full line would be 80 of those. 560 cycles, 400 bytes.
-; 23 of those would be 12880 cycles, 9200 bytes, about $2400.
-; so we could fill page 2 with unrolled instructions, and it would still take two VBLs.
-; we have around 9000 cycles during VBL, probably less due to sound interrupts.
-; the only way to move that many bytes without tearing is going to be page flipping.
-; due to how the smooth scrolling works, it's going to look bad if it gets half drawn
-; before the offset is changed.
-;
-; so. Page flipping.  That's going to look super smooth anyway, probably.
-; put odd offsets on page 1, even ones on page 2.
-; if we start at offset 0, we'll be looking at page 2.
-; paint both pages, page 1 at offset 1, page 2 at offset 0.
-; to scroll map down (so not using what we already have on page 1)
-; offset decreases by 2 from what was drawn already.
-; we draw lines 7-8 of new lower map row in lines 0-1
-; we copy lines 7-8 of row 23 to lines 7-8 of row 24, 22 to 23, 1 to 2
-; and line 0-1 to lines 7-8 of row 1
-; then at VBL flip to page 1, set offset to 7
-; this probably will take, even at high speed, 4 VBLs to do.  So we're down to 7.5 fps.
-; fast for an Apple, but still kind of slower than I'd hoped.
-; plus we need to do sprite background preservation, and this loses a lot of memory we'd otherwise
-; have had. 2, 4, 6, 8, we're already at $A000.
-; 
-; LDA immediate 2 PHA 3, that's not too bad. 5 per. Would be same for sta ZP.
-; PHA saves a byte but isn't interrupt-friendly
-; LDA immediate 2 STA R_ZP 4 LDX immediate 2 TSX 2 = 10 (or 6 without the stack part)
-; per half-line: 200 cycles 160 bytes for first page, 6 and 5 to switch,
-; so per line 406 cycles, 325 bytes.
-; for 23 lines, 9338, just makes it, maybe. 7475 bytes, under $2000.
-; so suppose I buffer all the lines into this executing code first, could
-; still use stack pushing or ZP writing to do it.  But I can take 2-3 VBLs to do it.
-; PHA technique would allow more bytes to stay constant though, just need to push the
-; data in, change the stack and pointer for different lines
-; LDX #$-- STA R_ZP LDX -- TSX LDA #$-- PHA LDA #$-- PHA...
-; fill in two (page, stack pointer for destination, then just read and buffer
-; feels complicated.  Would page flipping be less complicated?
-; I think it would, plus it would allow for more flexibility with sprites.
-; if it takes 10 VBLs to prepare to switch, that's still 3fps.
-; have to figure out how to save the background so we don't need to recompute it.
-; have to preserve 400-427 and 800-27, but otherwise 300-FFF is probably available.
-; game is from A000 up and graphics are from 2000-9FFF.
-
-; unrelated thinking aloud, if I write up a 2-line copylines, maybe this parallax
-; thing can work again? Front pane shifts 2 lines at a time, but only one, 4 possible offsets.
-; back plane is fully redrawn every time, has to be.  But it's the back plane so it
-; is narrower.  Maybe draw middle 20 bytes, 96 lines, then front 80 bytes, 24 lines.
-; still is going to need page flipping to work, but the speedup from 80x96 (or 80x192)
-; to 80x24 should be significant.
-
-; another unrelated thinking aloud, I could maybe use a lower-resource graphics mode.
-; but can't page flip the 16-color hires one.  Might be able to get it to work within.
-; VBL. Can only set colors in groups of 7.  This would provide a higher resolution (280)
-; but wouldn't really change the blitting resource requirements, still requires filling
-; all of $2000-27 and $400-27 per line.  But can scroll.  Same for super hires, even
-; more detail but monochrome, same blitting requirements.  The only lower resource
-; version would be A2 graphics, which would only require blitting 40/line instead of 80.
-; medres would work ok for river and banks, but the sprites would be pretty constrained
-; colorwise (blue background, per-line color foreground).  Could try that, but most of
-; the same tech would be involved.
-
-; there is actually a ton of drawing time while the screen is being painted.
-; 192 lines, 65 cycles each, 12480 cycles total.
-; 70 lines of VBL, 4550 cycles at 1MHz, 9100 cycles at 2MHz
-; so if I can keep ahead of the beam... problem is the copying goes against the beam,
-; though, if the screen is scrolling down.  So, maybe shift the orientation and force
-; up scrolling (as an experiment at least), with the logs traveling downward?
-; 2 ldx
-; 2 ldy
-; 4 lda abs,y
-; 4 sta zp,x
-; 4 lda abs,y
-; 4 sta zp,x
-; 2 dex
-; 2 dey
-; 3 branch taken
-; so for one line, 4 + (40 * (16 + 7)) - 1 = 923 cycles.
-; or 3 + 40*(16*1 + 7)
-; but for a second line, 4+(40*(32+7))-1 = 1563 cycles (not 1846, 283 fewer)
-; eight lines: 5403, five lines: 
-; twelve lines 3 + 40*(16*12 + 7): 7963.
-; 13: 8603
-; so we just might be able to do the top half of the screen during VBL (first 12 lines)
-; and then the bottom half before the beam catches up.  We would have 65*(8*13) = 6760
-; cycles I think before it gets to the top of the undrawn region.
-; and then we have 11 more lines to draw, should take 7323 cycles. Close but not quite.
-; if I unroll harder
-; 2+4 set ZP
-; 2 lda #
-; 3 sta ZP
-; x40 = 200 cycles, 160 bytes
-; repeat = 400 cycles per line, 320 bytes
-; can just about get everything in though in that case. 9200 cycles if interrupts
-; are stopped.  Sound interrupts might eat around 700 cycles.
-; 
-; sei (+2, 1)
-; point ZP/stack, set stack pointer (+10, 8)
-; lda # pha (+5, 3) 40 = (+200, 120)
-; point ZP/stack, set stack pointer (+10, 8)
-; lda # pha (+5, 3) 40 = (+200, 120)
-; point ZP/stack, set stack pointer (+10, 8)
-; cli (+2, 1)
-; +2, 1 in, +12, 9 out, +420, 256 per line
-; sound would be about 65 cycles
-; 4 lines, +1680, 1024
-; 3 lines, +1260, 768
-; so:
-; in +2, 1
-; draw 4 lines +1680, 1024
-; do sound +65
-; x5 (gets to 20 lines drawn)
-; out +12, 9
-; 
-; so: +8749, 5130ish (not counting sound calls) gets 20 drawn and 5 sounds
-; all still within VBL, and should be able to get the last three out before beam arrives.
-; last three +1260, 768 -- only the first might scrape by before clock downshifts.
-; problem with sound is that it will be "about" 65 cycles, conditions vary its length
-; using a timer will burn many cycles though, probably around 550-650.
-; stuffing the blitter will of course take well longer than a cycle.
-; full screen pass (draw+VBL) is about 21580 cycles. Maybe it can almost fit.
-; then need to draw sprites (erase, shift lines, mask, save background, draw)
-; then finally VBL->set graphics modes and blit
-;
 ; one thing that occurs to me.  If we're doing all the lines, do we need to stop at #40?
 ; what if we did 6 lines at a time, from 0-240?  That might wind up being legit.
 ; first 8 lines are low 00, next 8 are low 80, repeats for first 64 lines.
@@ -395,7 +240,7 @@
 ; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
 ; value for NeedScroll is: 0=stop, neg=map down/dec off, pos=map up/inc off
 
-fixscroll:  clc                 ; clear carry signifies both "scroll up" and "was quick"
+fixscroll:  clc                 ; carry clear = both "scroll up" and "was quick"
 NeedScroll = *+1
             lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
             beq noscroll
@@ -403,10 +248,44 @@ NeedScroll = *+1
             bcc scrollup        ; branch always
 scrolldn:   sec
 scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll)
-            sec                 ; tell eventloop we took some time
             lda #$00
             sta NeedScroll      ; we no longer need a scroll
+            sec                 ; tell eventloop we took some time
 noscroll:   rts
+
+; synchronize the scroll on the page we are not looking at with the scroll
+; of the page we are looking at.
+; PgOneOff and PgTwpOff will always be either equal or one apart.
+; if they are equal, quit quickly, if they're one apart, bring them together.
+; if offset 1 > offset 2 and we are looking at page 1, clc (increase p2)
+; if offset 1 > offset 2 and we are looking at page 2, sec (decrease p1)
+; if offset 2 > offset 1 and we are looking at page 1, sec (decrease p2)
+; if offset 2 > offset 1 and we are looking at page 2, clc (increase p1)
+; scrollmap always operates on the page we are not looking at
+
+syncscroll: lda PgOneOff
+            cmp PgTwoOff
+            bne syncneeded
+            clc                 ; equal also means carry set, so need to clear
+            rts                 ; return, indicating that we spent no time
+            ; sync needed
+syncneeded: bcc ssptwohigh      ; branch away if page 1 is less than page 2
+            ; page 1 is greater than page 2
+            lda ShownPage
+            lsr
+            ; carry clear if we're looking at p1, set if we're looking at p2
+            ; which coincidentally is exactly what we need to tell scrollmap
+            ; what direction to scroll the non-visible page.
+            bpl ssdoscroll      ; branch always
+            ; page 2 is greater than page 1
+ssptwohigh: lda ShownPage
+            eor #$01
+            lsr
+            ; carry set if we're looking at p2, clear if we're looking at p1
+            ; which tells scrollmap what direction to scroll the non-visible page
+ssdoscroll: jsr scrollmap
+            sec                 ; tell the event loop we took substantial time
+            rts
 
 ; read a line of tiles from the map into the zero page cache ($00-$13)
 ; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)
@@ -447,7 +326,7 @@ gfxinit:    lda #$82            ; map is bank 2
             sta ZPtrA           ; tile graphics low byte
             rts
 
-; paint a single line from cached tiles
+; paint a single line from cached tiles on the nonvisible page
 ; call with:
 ; - X holding the physical graphics line (0-BF)
 ; - Y holding the offset into tile we should draw onto the physical graphics line
@@ -466,10 +345,17 @@ paintline:  lda YHiresLA, x     ; look up the bases for all four tile bytes
             lda YHiresLB, x
             sta PMLineC
             sta PMLineD
-            lda YHiresHA, x
+            lda ShownPage
+            and #$01
+            lsr                 ; carry set for page 2 clear for page 1
+            lsr                 ; $80 if page 2 and carry clear
+            lsr                 ; $40 if page 2 and carry clear
+            pha                 ; save for setting page B
+            adc YHiresHA, x
             sta PMLineA + 1
             sta PMLineC + 1
-            lda YHiresHB, x
+            pla                 ; $40 if page 2, 0 if page 1, carry still clear
+            adc YHiresHB, x
             sta PMLineB + 1
             sta PMLineD + 1
             tya                 ; line of tile to draw
@@ -505,11 +391,12 @@ PMLineD = *+1
             bpl pmraster
             rts
 
-; paint the whole map (called at the outset)
+; paint the whole page (called at the outset) on the nonvisible page
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; assumes smooth scroll offset is 0
+; will be followed by a call to copypage that will copy our work over to page 1
 
-paintmap:   lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
+paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
             sta PMBankSave      ; save it inline within later restore code.
             jsr gfxinit         ; set up pointers and switch banks
             lda #$BF            ; we are drawing from the bottom up
@@ -540,6 +427,27 @@ pmtile:     ldx ZCurrScrL
 PMBankSave = *+1
             lda #INLINEVAR
             sta R_BANK
+            rts
+
+; copy the whole of page 2 (presumed just to have been painted)
+; to page 1
+
+copypage:   lda #$60            ; beginning of page 1
+            sta CMSrc + 1
+            lda #$20            ; beginning of page 2
+            sta CMTrg + 1
+            ldy #$40            ; we are moving $40 pages
+            ldx #$00
+CMSrc = *+1
+cmloop:     lda $6000, x        ; INLINEADDR with 00 low byte
+CMTrg = *+1
+            sta $2000, x        ; INLINEADDR with 00 low byte
+            inx
+            bne cmloop
+            inc CMSrc
+            inc CMTrg
+            dey
+            bne cmloop
             rts
 
 ; imagine you are at TopRow 230, TopOff 0
@@ -710,13 +618,15 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; notes: interrupts too tight to use stack for speed increase here
 ; zero page is used for blitting speed, so variables below can't be in ZP
 
-; this still seems to be too slow to finish in the VBL
-; we should have about 9000 cycles in VBL, but it is flickering
-; will need to see what can be done to speed this up.
-; maybe generate some unrolled loops. We have to draw 23 lines, move 80 bytes per line
-; so it is super tight, not sure how sprites will figure into this
-; might try page flipping, but that would require drawing twice as many lines
-; still 4 times fewer than manual scrolling would require, but not 8.
+; code fragment to detect page.
+            lda ShownPage
+            and #$01
+            lsr                 ; carry set for page 2 clear for page 1
+            lsr                 ; $80 if page 2 and carry clear
+            lsr                 ; $40 if page 2 and carry clear
+            pha                 ; save for setting page B
+            adc YHiresHA, x
+            
 
 ScrollDir:  .byte 0             ; preserve entry carry in high bit
 LinesLeft:  .byte 0             ; lines remaining to draw

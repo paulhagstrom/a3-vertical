@@ -46,13 +46,14 @@
 ; so we're looking at max audio sampling around 2KHz.
 
 ; VBL handler
-; 29 cycles to get here, 46 cycles in here [75 total]
+; 29 cycles to get here, 50 cycles in here [79 total]
 intvbl:     lda #$06            ;2 reset the HBL counter for switch to a3 hires mode
             sta RE_T2CL         ;4 (starts counting after VBL is over, so no rush)
-            lda #$0             ;2
+            lda #$00            ;2
             sta RE_T2CH         ;4 
             sta D_NOMIX         ;4 set screen to Apple III color text mode for after VBL
             sta D_LORES         ;4
+            sta D_PAGEONE       ;4 only page 1 makes sense for A3 color text
             sta D_SCROLLOFF     ;4 MAME bug requires us to turn this off for text
             ;sta D_TEXT         ; don't need to hit this switch because it does not change
             lda #$10            ;2 clear the VBL (CB1) interrupt
@@ -103,14 +104,16 @@ inthandle:  pha                 ;3 stash A because we need it
             lda RE_INTFLAG      ;4 identify the interrupt we got
             and #$20            ;2 [9] is it HBL?
             beq nothbl          ;2/3 branch+jump off to the rest of the interrupt handlers if not
-            ; this is the HBL interrupt, and we've burned 11 cycles already
+            ; this is the HBL interrupt, and we've burned 11 cycles already, took 7 minimum to start.
             sta D_MIX           ;4 switch to a3 hires mode
-            sta D_HIRES         ;4 [19] this just barely makes it
+            sta D_HIRES         ;4 [19]
+ShownPage = *+1                 ; set this to either $54 (page 1) or $55 (page 2)
+            sta D_PAGEONE       ;4 [23]            
             ;sta D_TEXT         ; no need to hit this switch because it does not change
-            sta D_SCROLLON      ;4  MAME bug requires this to be turned on and off
-            sta RE_INTFLAG      ;4 [27] clear the HBL interrupt (A is still $20)
-clockout:   pla                 ;4
-            rti                 ;6 [done with HBL after 37]
+            sta D_SCROLLON      ;4 [27] MAME bug requires this to be turned on and off
+            sta RE_INTFLAG      ;4 [31] clear the HBL interrupt (A is still $20)
+clockout:   pla                 ;4 [35]
+            rti                 ;6 [done with HBL after 41]
 
 ; timer1 interrupt handler, to handle audio
 ; skipped for simplicity, maybe add in later.
