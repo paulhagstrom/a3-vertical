@@ -31,21 +31,31 @@ PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
-TopRow:     .byte   0                       ; map row at top of the screen
-TopOff:     .byte   0                       ; offset into tile the map row at top of screen in
-PgOneOff:   .byte   0                       ; smooth scroll offset on page 1
-PgTwoOff:   .byte   0                       ; smooth scroll offset on page 2
+PgOneTop:   .byte   0                       ; map row at top of the screen on page 1
+PgTwoTop:   .byte   0                       ; map row at top of the screen on page 2 (must follow PgOneTop)
+PgOneOff:   .byte   0                       ; scroll offset on page 1
+PgTwoOff:   .byte   0                       ; scroll offset on page 2 (must follow PgOneOff) 
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
 
 NumLogs:    .byte   0                       ; number of logs on map
 
-; The following setting governs how often the game clock goes off, which is when movement
-; is processed.  Values under 3 risk leaving not enough time to do everything else when
-; movement isn't being processed, but over 3 start feeling pretty pokey.  Best to try to
-; keep it at 3 or below and make everything more efficient.
-MoveDelay   = 3                             ; VBLs per game tick (3 seems about minimum possible)
+; The following settings govern when how often the movement clock goes off, and when
+; the page swaps, in VBLs.  This is kind of set by guesswork and trial and error.
+; Need to leave enough time in MoveDelay to allow drawing/erasing sprites,
+; scrolling both pages.  Need to set FlipTick late enough that movement, draw sprites, 
+; and one scroll can happen first, before reaching FlipTick (so it waits for the VBL).
+; Beyond that, no problem setting them higher to slow down game speed for difficulty management.
+; VBLTick   00: do movement computations (scroll? sprites? collisions?) (1 tick?)
+;           06- scroll page B if needed (1 tick?)
+;           05- draw sprites on page B (1 tick?)
+;           03- flip to page A (swap B and A meanings)
+;           02- erase sprites on page B (1 tick?)
+;           01- scroll page B to match page A (if they don't already match) (1 tick?)
+
+MoveDelay   = 6                             ; VBLs per game tick (3 seems about minimum possible)
+FlipTick    = 3                             ; Tick just after which the page flip happens.
 
 ; main game event loop
 
@@ -58,23 +68,39 @@ KeyCaught = *+1                             ; keyboard interrupt pushes a caught
             jsr handlekey                   ; if there was a key, handle it
 VBLTick = *+1                               ; ticked down for each VBL, governs game speed
 :           lda #INLINEVAR                  ; wait for game clock to tick
-            bpl offtick                     ; based on number of VBLs set in MoveDelay
+            bne offtick                     ; based on number of VBLs set in MoveDelay
             ; on the game clock, do movement and update animation
-            jsr domove                      ; game clock has ticked, move everyone (takes time)
             lda #MoveDelay                  ; reset the game clock
             sta VBLTick
+            lda #$00                        ; mark this cycle as not having flipped yet
+            sta FlipDone
+            jsr domove                      ; game clock has ticked, move everyone (takes time)
             jmp eventloop                   ; go back up to schedule in all the other stuff
             ; when not on the game clock, do everything else until we hit the game clock again
 offtick:
-            ;jsr clrsprite                   ; erase sprites on nonvisible page
-            ;bcs eventloop                   ; go back around if we spent some time
-            jsr syncscroll                  ; scroll nonvisible page to match visible one
-            bcs eventloop                   ; go back around if we spent some time
             jsr fixscroll                   ; scroll nonvisible page if movement is needed
             bcs eventloop                   ; go back around if we spent some time
             ;jsr setsprite                   ; draw sprites on nonvisible page
             ;bcs eventloop                   ; go back around if we spent some time
-            jsr drawstatus                  ; redraw score
+            ; if we made it here then we are ready to flip... unless we already did
+FlipDone = *+1
+            lda #INLINEVAR                  ; nonzero if we have flipped this game clock cycle
+            bne flipped
+            ; wait until just after we pass the flip tick VBL
+            lda #FlipTick
+stallvbl:   cmp VBLTick
+            bcs eventloop
+            ; flip visible and nonvisible pages
+            lda ShownPage
+            eor #$01                        ; (C0)54 <-> (C0)55
+            sta ShownPage                   ; this is inline in HBL interrupt handler
+            inc FlipDone                    ; no more flipping during this game clock cycle
+            jsr fixnudge                    ; set the smooth scroll parameter on visible page
+flipped:    ;jsr clrsprite                   ; erase sprites on nonvisible page
+            ;bcs eventloop                   ; go back around if we spent some time
+            jsr syncscroll                  ; scroll nonvisible page to match visible one
+            bcs eventloop                   ; go back around if we spent some time
+            jsr drawstatus                  ; redraw score, burn a few cycles
             jmp eventloop
             
 alldone:    lda #$7F                        ;disable all interrupts
@@ -140,6 +166,52 @@ keydone:    lda #$00
             sta KeyCaught
             rts
 
+; set the smooth scroll parameter on the visible page
+fixnudge:   lda ShownPage
+            and #$01            ; 0 if page 1 is visible, 1 if page 2 is visible
+            tay
+            lda PgOneOff, y     ; offset value of visible page
+            tay
+            lda TwelveBran, y   ; jump table lookup for this offset value
+            sta NudgeVal
+NudgeVal = *+1                  ; smooth scroll parameter x $0C
+            bpl nudge0          ; INLINEVAR - branch always
+nudge0:     bit SS_XXN
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge1:     bit SS_XXY
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge2:     bit SS_XXN
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge3:     bit SS_XXY
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge4:     bit SS_XXN
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge5:     bit SS_XXY
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge6:     bit SS_XXN
+            bit SS_XYX
+            bit SS_YXX
+            jmp postnudge       ; at this point (each block but last: 39, last (nudge 7): 36) 
+nudge7:     bit SS_XXY
+            bit SS_XYX
+            bit SS_YXX
+postnudge:  rts
+
+; TwelveBran is a table of multiples of $0C, used as a branch table when setting smooth scroll
+TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
+
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
@@ -168,13 +240,15 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr buildgfx        ; define graphics assets
             ;jsr buildsfx        ; define sound effects
             lda #232            ; top map row when we start (makes bottom row 255)
-            sta TopRow
+            sta PgOneTop        ; top map row - page 1
+            sta PgTwoTop        ; top map row - page 2
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-13)
             lda #$FC            ; Start down near the bottom
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             lda #$00            
-            sta TopOff          ; 
+            sta PgOneOff        ; scroll offset 0 - page 1
+            sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
             sta PlayerYOff      ; this is the Y offset of the player from the top of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)

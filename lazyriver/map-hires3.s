@@ -31,7 +31,7 @@
 ; continually scrolls at full speed (one line per game clock).  But if the
 ; background ever stops scrolling, then we're not flipping and so we need to
 ; erase and redraw all the sprites in the confines of a single VBL.  This
-; wpi;d only allow for maybe 5 sprites before we run out of time.
+; would only allow for maybe 5 sprites before we run out of time.
 ;
 ; A more flexible strategy that will allow for more sprites without tearing
 ; is to use the pages as just framebuffers, kept basically in sync and always
@@ -86,153 +86,7 @@
 ; it somewhere, apply a mask, draw, and then store.  That's minimally
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
-;
-; one thing that occurs to me.  If we're doing all the lines, do we need to stop at #40?
-; what if we did 6 lines at a time, from 0-240?  That might wind up being legit.
-; first 8 lines are low 00, next 8 are low 80, repeats for first 64 lines.
-; then 28 A8, then D0 50.  In blocks of 64 lines, it goes 20, 20, 21, 21, 22, 22, 23, 23.
-; so if I'm copying line 10 to 08, 18 to 10, etc., it's n to n-8.
-; 2000 holds line 0 (0-27), 40 (28-4F), 80 (50-77), 08 (80-A7), 48 (A8-CF), 88 (D0-F7)
-; 2000: 00 40 80 08 48 88
-; 2100: 10 50 90 18 58 98
-; 2200: 20 60 A0 28 68 A8
-; 2300: 30 70 B0 38 78 B8
-; 
-; 2100->2080, 2180->2100, 2200->2180, 2280->2200, 2300->2280, 2380->2300
-; 2028->2380, 20A8->2028, 2128->20A8, 21A8->2128, 2228->21A8, 22A8->2228, 2328->22A8, 23A8->2328
-; 2050->23A8, 20D0->2050, 2150->20D0, 21D0->2150, 2250->21D0, 22D0->2250, 2350->22D0, 23D0->2350
-; new line goes into 23D0-23F7.
-; generally speaking, I'm copying something to $80 before it.
-; so there's an antecedent problem if I try to do this will full pages, but maybe I can do it with $80s.
-; If I take X from 77 to 0 and copy
-; 2000+x -> 2380+x ([2000->2380], 2028->23A8, 2050->23D0) ([0->B8], 40->38, 80->78)
-; 2080+x -> 2000+x ([2080->2000], 20A8->2028, 20D0->2050) ([8->0], 48->40, 88->80)
-; 2100+x -> 2080+x (2100->2080, 2128->20A8, 2150->20D0) (10->8, 50->48, 90->88)
-; 2180+x -> 2100+x (2180->2100, 21A8->2128, 21D0->2150) (18->10, 58->50, 98->90)
-; 2200+x -> 2180+x (2200->2180, 2228->21A8, 2250->21D0) (20->18, 60->58, A0->98)
-; 2280+x -> 2200+x (2280->2200, 22A8->2228, 22D0->2250) (28->20, 68->60, A8->A0)
-; 2300+x -> 2280+x (2300->2280, 2328->22A8, 2350->22D0) (30->28, 70->68, B0->A8)
-; 2380+x -> 2300+x (2380->2300, 23A8->2328, 23D0->2350) (38->30, 78->70, B8->B0)
-; should save a few cycles.
-; but does it work? Do I ever overwrite something I need later?
-; if I start at 2080, I'm ok to 2380, but I overwrite 40 and 80 and need those for 2000.
-; I draw the new line at B8.
-; So, it's basically the first line that is at risk, 2000+x
-; I need to do that before 2080+x but it interacts with 2380+x
-; I don't need 0->B8 (though I can use it to draw the new line actually)
-; I don't need 8->0
-; not sure I really gain a lot here.
-; might as well just go from 27 to 0 on 23 different unrolled lines.
-; but if I unroll fully then I can't finish in the VBL. As detailed earlier.
-; 
-; for simplicity I would rather avoid stuffing a blitter if I can, seems redundant
-; to move the data twice.
-;
-; and looking at atomic defense it really seems like AH didn't try all that hard.
-; why does HIS code work?
-; 
-; ok, let me look again, why can't I just do 2000<2080.23FFM, essentially?
-; that's what I was trying to determine above, right?  How could this not work?
-; the only issues are writing line 40 to 38 and 80 to 78 since those get overwritten.
-; can I cache those before VBL?
-; so, stash 2028-20F7 somewhere, VBL.
-; point ZP at 20
-; ldy #$04      ;2
-; page:
-; ldx #$80      ;2
-; bne skip      ;3
-; up:
-; ldx #$00      ;2
-; skip:
-; lda $80, x    ;4
-; sta $00, x    ;4
-; inx           ;2
-; bne up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
-; bit ZP        ;4 test to see if we are in $40 or $20
-; bvc inhi      ;3/2 branch if in $20
-; inc ZP        ;6 if we're in $40, we want to shift to $21
-; inhi:
-; lda ZP        ;4
-; eor #$60      ;2 switch between $20 and $40
-; sta ZP        ;4
-; dey           ;2
-; bne page      ;3/2 [9+2 overhead]
-; 
-; ok, that seems about as tight as I can make something with this logic.
-; inner loop: 13 per loop, 256 passes, moves 256 bytes. 3328 cycles.
-; that sets a floor. We need to move 21-20 22-21 23-22 41-40 42-41 43-41
-; of easy movement, which is 6 pages, 19968 minimum.
-; how can I move 256 bytes faster?
-; I can use PHA if I can count back.
-; point stack at $2000
-; ldx #$7f      ;2
-; txs           ;2
-; skip:
-; lda $2080, x  ;4
-; pha           ;3
-; dex           ;2
-; bpl skip      ;2/3 [12 per loop, 256 loops, 3072 cycles]
-; so floor is now 18432, a little better.
-; if I unroll this without having to stuff the blitter
-; point stack to $2000, pointer to $7F
-; lda $21FF     ;4
-; pha           ;3
-; lda $21FE     ;4
-; pha           ;3
-; ... 
-; lda $2100     ;4
-; pha           ;3
-; total 7 cycles 4 bytes per byte moved, 1792, 1024 to move 256 bytes.
-; that's looking good.  If I move 8 of these, that's 14336, 8192.
-; I can get 5 done during VBL at basically the theoretical maximum speed.
-; but to get a different offset, I need to write one hi byte per byte moved
-; too into the blitter.  I have to move 1024 bytes.  So just writing is
-; 4096 cycles.
-; that's not quite the theoretical maximum, because I could
-; stuff the blitter with values too, then it would be
-; 5 cycles, 3 bytes per byte moved.
-; so 1280, 768 bytes to move 256 bytes.
-; or 10240, 6144 for 8.
-;
-; so 1664 + (11+3228)*3 = 1664 + 9717 = 11381
-; won't make it within VBL, but might it beat the beam?
-; 3239*2 = 6478 + 1664 = 8142
-; so line 30 is the earliest risk.  I think there are 520 cycles per 8 block.
-; so line 30 will arrive within 6 of those. 3120 cycles.
-; so I have to finish by 12220.  Very close.  It works except for lines 38 and 78.
-; I have to get line 38 done by 12740. Gives me around 1359 cycles to do it.
-; Oh, wait. Crap. No. This is only half the job, I need to move the $40 page too.
-; I might be able to use the stack, but it only provides a benefit in one direction.
-; pla is 3 but pha is 4 same as sta zero,x.
-; ZP 20 stack 21, ZP 21 stack 20, ZP 22 stack 23, ZP 23 stack 22
-; 
-; you know, LDA absolute, X is still 4 if it doesn't cross a page boundary.
-; ZP isn't buying me as much as I thought it was.
 
-; so, stash 2028-20F7, 4028-40F7 somewhere, VBL.
-; ldx #$00      ;2
-; up:
-; lda $2080, x  ;4
-; sta $2000, x  ;4
-; lda $2100, x  ;4
-; sta $2080, x  ;4
-; ...
-; lda $2380, x  ;4
-; sta $2300, x  ;4
-; lda $4080, x  ;4
-; sta $4000, x  ;4
-; ...
-; lda $4380, x  ;4
-; sta $4300, x  ;4
-; inx           ;2 [above: 16 per 80 for both pages, 6 80s, 96, so 98*128=12544]
-; bpl up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
-; 
-; seems like I'm trying to break physical laws here getting this to go faster.
-; pla only can work for one scroll direction, and it takes 6 cycles to shift the
-; ZP/stack to somewhere else. Still, 6x23x2 = 276 cycles of overhead to do this
-; line by line, may not be significant if I can save in the big loops.
-; 
-; 
 ; movement processing happens on the VBL downbeat, so wait until the next one to 
 ; update graphics.
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
@@ -504,12 +358,11 @@ CMTrg = *+1
 ; now I need to copy from top to bottom, and then buffer line TopRow+24's line old offset (0) into 0
 ; this is pretty doable.
 
-; scrollmap will effect a vertical movement of the map regions of the screen.
-; locates new line and puts it in raster 0, then calls copylines to do the scroll, then moves hardware scroll
+; scrollmap will effect a vertical movement of the map regions of the nonvisible screen.
+; locates new line and puts it in raster 0, then calls copylines to do the scroll.
 ; enter with:
 ; - carry clear: move the map up (hero downward), increasing nudge
 ; - carry set: move the map down (hero upward), decreasing nudge
-; it will finish by setting NudgeVal correctly so that the interrupt handler will display it right.
 
 scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
@@ -517,7 +370,11 @@ scrollmap:  lda R_BANK          ; save bank
             sta SMIncDec
             asl                 ; restore carry
             jsr gfxinit         ; go to bank 0, where (hires) graphics memory lives
-            lda TopOff          ; current nudge value (offset into map's top line that we're at)
+            lda ShownPage       
+            eor #$01            ; switch focus to nonvisible page
+            and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
+            tax
+            lda PgOneOff, x     ; scroll offset for nonvisible page 
             bcs smdecn          ; branch away if we are decreasing nudge
             ; we are increasing nudge (map scrolls upward)
             sta SMNVal          ; use current (smaller) offset for copylines
@@ -525,34 +382,31 @@ scrollmap:  lda R_BANK          ; save bank
             and #$07
             bne smincnow        ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
-            inc TopRow
-smincnow:   sta TopOff          ; store new nudge value in map offset variable
-            lda TopRow
+            inc PgOneTop, x
+smincnow:   sta PgOneOff, x     ; store new scroll offset value for nonvisible page
+            lda PgOneTop, x
             adc #21             ; carry is still known to be clear, new line is in bottom row
             tax
             bcc smdraw          ; branch always
             ; we are decreasing nudge (map scrolls downward)
 smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
-            dec TopRow          ; move top of map up one line
+            dec PgOneTop, x     ; move top of map up one line
             lda #$07
-            sta TopOff          ; set offset to 7 in the new map line
+            sta PgOneOff, x     ; set offset to 7 in the new map line on nonvisible page
             sta SMNVal          ; use new (smaller) offset for copylines
             bne smdrawtop       ; branch always
             ; nudge will not wrap, so map line will not change
-smdecnow:   dec TopOff
-            lda TopOff
+smdecnow:   dec PgOneOff, x
+            lda PgOneOff, x
             sta SMNVal
-smdrawtop:  ldx TopRow
+smdrawtop:  lda PgOneTop, x
+            tax
 smdraw:     jsr tilecache       ; cache the tiles for map line
             ldy SMNVal          ; line of tile to draw
             ldx #$00            ; draw to raster 0
             jsr paintline
-            ; now copy everything to visible screen regions
-            ; stall for VBL
-            lda VBLTick
-smstall:    cmp VBLTick
-            beq smstall
+            ; now shift all the lines (and copy in the buffered line 0)
 SMNVal = *+1
             ldy #INLINEVAR      ; lower of current nudge and new nudge
 SMIncDec = *+1
@@ -560,49 +414,45 @@ SMIncDec = *+1
             asl                 ; send it back to the carry bit
             jsr copylines
 SMBankSave = *+1
-upddone:    lda #INLINEVAR      ; restore the bank
+            lda #INLINEVAR      ; restore the bank
             sta R_BANK
-            ; adjust the smooth scroll offset
-            ldy TopOff
-            lda TwelveBran, y
-            sta NudgeVal
-NudgeVal = *+1                  ; smooth scroll parameter x $0C
-            bpl nudge0          ; INLINEVAR - branch always
-nudge0:     bit SS_XXN
-            bit SS_XNX
-            bit SS_NXX
-            jmp postnudge
-nudge1:     bit SS_XXY
-            bit SS_XNX
-            bit SS_NXX
-            jmp postnudge
-nudge2:     bit SS_XXN
-            bit SS_XYX
-            bit SS_NXX
-            jmp postnudge
-nudge3:     bit SS_XXY
-            bit SS_XYX
-            bit SS_NXX
-            jmp postnudge
-nudge4:     bit SS_XXN
-            bit SS_XNX
-            bit SS_YXX
-            jmp postnudge
-nudge5:     bit SS_XXY
-            bit SS_XNX
-            bit SS_YXX
-            jmp postnudge
-nudge6:     bit SS_XXN
-            bit SS_XYX
-            bit SS_YXX
-            jmp postnudge       ; at this point (each block but last: 39, last (nudge 7): 36) 
-nudge7:     bit SS_XXY
-            bit SS_XYX
-            bit SS_YXX
-postnudge:  rts
+            rts
 
-; TwelveBran is a table of multiples of $0C, used as a branch table when setting NudgeVal
-TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
+;(.*)$ ; code fragment to detect page.
+;(.*)$             lda ShownPage
+;(.*)$             and #$01
+;(.*)$             lsr                 ; carry set for page 2 clear for page 1
+;(.*)$             lsr                 ; $80 if page 2 and carry clear
+;(.*)$             lsr                 ; $40 if page 2 and carry clear
+;(.*)$             pha                 ; save for setting page B
+;(.*)$             adc YHiresHA, x
+;(.*)$ 
+;(.*)$ ; memory move fragment from earlier
+;(.*)$ ; don't need to mess around with ZP really, except maybe could
+;(.*)$ ; use it for stashing the two lines we need to preserve during copying
+;(.*)$             lda #$60            ; beginning of page 1
+;(.*)$             sta CMSrc + 1
+;(.*)$             lda #$20            ; beginning of page 2
+;(.*)$             sta CMTrg + 1
+;(.*)$             ldy #$40            ; we are moving $40 pages
+;(.*)$             ldx #$00
+;(.*)$ CMSrc = *+1
+;(.*)$ cmloop:     lda $6000, x        ; INLINEADDR with 00 low byte
+;(.*)$ CMTrg = *+1
+;(.*)$             sta $2000, x        ; INLINEADDR with 00 low byte
+;(.*)$             inx
+;(.*)$             bne cmloop
+;(.*)$             inc CMSrc
+;(.*)$             inc CMTrg
+;(.*)$             dey
+;(.*)$             bne cmloop
+;(.*)$             rts
+
+; update this to be more like just a memory move, this is too fiddly
+; also ensure that it operates on the nonvisible page, whichever that is
+; mostly just want to copy addr+80 to addr (or addr to addr+80, depending on direction)
+; across both A and B graphics areas.  Go from 0 to 77 to get three lines at once.
+; with a couple of special cases (preserve two lines, copy line 0 into one of them)
 
 ; copylines rolls the whole screen (all lines below raster 7)
 ; raster line 0 is the new line that will be fed in at the appropriate edge
@@ -614,19 +464,6 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; or - carry set for nudge decrease (scroll down, hero up, Y is new)
 ; assumes we are already in bank 0 (video data)
 ; on exit: ZP set to $1A00, no registers survive
-
-; notes: interrupts too tight to use stack for speed increase here
-; zero page is used for blitting speed, so variables below can't be in ZP
-
-; code fragment to detect page.
-            lda ShownPage
-            and #$01
-            lsr                 ; carry set for page 2 clear for page 1
-            lsr                 ; $80 if page 2 and carry clear
-            lsr                 ; $40 if page 2 and carry clear
-            pha                 ; save for setting page B
-            adc YHiresHA, x
-            
 
 ScrollDir:  .byte 0             ; preserve entry carry in high bit
 LinesLeft:  .byte 0             ; lines remaining to draw
@@ -715,3 +552,66 @@ cllast:     ldy #$00            ; offscreen buffer line is line 0
             pla                 ; toss out saved line
             jmp clsetsrc
 
+; notes from before, maybe consolidate once I know what I'm doing here.
+; first 8 lines are low 00, next 8 are low 80, repeats for first 64 lines.
+; then 28 A8, then D0 50.  In blocks of 64 lines, it goes 20, 20, 21, 21, 22, 22, 23, 23.
+; so if I'm copying line 10 to 08, 18 to 10, etc., it's n to n-8.
+; 2000 holds line 0 (0-27), 40 (28-4F), 80 (50-77), 08 (80-A7), 48 (A8-CF), 88 (D0-F7)
+; 2000: 00 40 80 08 48 88
+; 2100: 10 50 90 18 58 98
+; 2200: 20 60 A0 28 68 A8
+; 2300: 30 70 B0 38 78 B8
+; 
+; 2100->2080, 2180->2100, 2200->2180, 2280->2200, 2300->2280, 2380->2300
+; 2028->2380, 20A8->2028, 2128->20A8, 21A8->2128, 2228->21A8, 22A8->2228, 2328->22A8, 23A8->2328
+; 2050->23A8, 20D0->2050, 2150->20D0, 21D0->2150, 2250->21D0, 22D0->2250, 2350->22D0, 23D0->2350
+; new line goes into 23D0-23F7.
+; generally speaking, I'm copying something to $80 before it.
+; so there's an antecedent problem if I try to do this will full pages, but maybe I can do it with $80s.
+; If I take X from 77 to 0 and copy
+; 2000+x -> 2380+x ([2000->2380], 2028->23A8, 2050->23D0) ([0->B8], 40->38, 80->78)
+; 2080+x -> 2000+x ([2080->2000], 20A8->2028, 20D0->2050) ([8->0], 48->40, 88->80)
+; 2100+x -> 2080+x (2100->2080, 2128->20A8, 2150->20D0) (10->8, 50->48, 90->88)
+; 2180+x -> 2100+x (2180->2100, 21A8->2128, 21D0->2150) (18->10, 58->50, 98->90)
+; 2200+x -> 2180+x (2200->2180, 2228->21A8, 2250->21D0) (20->18, 60->58, A0->98)
+; 2280+x -> 2200+x (2280->2200, 22A8->2228, 22D0->2250) (28->20, 68->60, A8->A0)
+; 2300+x -> 2280+x (2300->2280, 2328->22A8, 2350->22D0) (30->28, 70->68, B0->A8)
+; 2380+x -> 2300+x (2380->2300, 23A8->2328, 23D0->2350) (38->30, 78->70, B8->B0)
+; should save a few cycles.
+; but does it work? Do I ever overwrite something I need later?
+; if I start at 2080, I'm ok to 2380, but I overwrite 40 and 80 and need those for 2000.
+; I draw the new line at B8.
+; So, it's basically the first line that is at risk, 2000+x
+; I need to do that before 2080+x but it interacts with 2380+x
+; I don't need 0->B8 (though I can use it to draw the new line actually)
+; I don't need 8->0
+; not sure I really gain a lot here.
+; might as well just go from 27 to 0 on 23 different unrolled lines.
+; but if I unroll fully then I can't finish in the VBL. As detailed earlier.
+; 
+;the only issues are writing line 40 to 38 and 80 to 78 since those get overwritten.
+; can I cache those before VBL?
+; so, stash 2028-20F7 somewhere, VBL.
+; point ZP at 20
+; ldy #$04      ;2
+; page:
+; ldx #$80      ;2
+; bne skip      ;3
+; up:
+; ldx #$00      ;2
+; skip:
+; lda $80, x    ;4
+; sta $00, x    ;4
+; inx           ;2
+; bne up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
+; bit ZP        ;4 test to see if we are in $40 or $20
+; bvc inhi      ;3/2 branch if in $20
+; inc ZP        ;6 if we're in $40, we want to shift to $21
+; inhi:
+; lda ZP        ;4
+; eor #$60      ;2 switch between $20 and $40
+; sta ZP        ;4
+; dey           ;2
+; bne page      ;3/2 [9+2 overhead]
+; 
+; 
