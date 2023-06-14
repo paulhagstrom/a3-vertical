@@ -216,6 +216,7 @@ paintline:  lda YHiresLA, x     ; look up the bases for all four tile bytes
             sta PMLineC
             sta PMLineD
             lda ShownPage
+            eor #$01            ; focus on unshown page
             and #$01
             lsr                 ; carry set for page 2 clear for page 1
             ror                 ; $80 if page 2 and carry clear
@@ -268,7 +269,7 @@ PMLineD = *+1
 
 paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
             sta PMBankSave      ; save it inline within later restore code.
-            jsr gfxinit         ; set up pointers and switch banks
+            jsr gfxinit         ; set up pointers and switch banks (paintline needs it)
             lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
             lda PgOneTop        ; map line of the top row on the screen
@@ -302,22 +303,30 @@ PMBankSave = *+1
 ; copy the whole of page 2 (presumed just to have been painted)
 ; to page 1
 
-copypage:   lda #$60            ; beginning of page 1
-            sta CMSrc + 1
+copypage:   lda R_BANK          
+            sta CPBankSave      ; save bank inline within later restore code.
+            lda #$00            ; switch to bank 0 for graphics
+            sta R_BANK
+            lda #$60            ; beginning of page 1
+            sta CMSrcPg
             lda #$20            ; beginning of page 2
-            sta CMTrg + 1
+            sta CMTrgPg
             ldy #$40            ; we are moving $40 pages
             ldx #$00
-CMSrc = *+1
+CMSrcPg = *+2
 cmloop:     lda $6000, x        ; INLINEADDR with 00 low byte
-CMTrg = *+1
+CMTrgPg = *+2
             sta $2000, x        ; INLINEADDR with 00 low byte
             inx
             bne cmloop
-            inc CMSrc
-            inc CMTrg
+            inc CMSrcPg
+            inc CMTrgPg
             dey
             bne cmloop
+            ; copying page is finished, restore bank and exit
+CPBankSave = *+1
+            lda #INLINEVAR
+            sta R_BANK
             rts
 
 ; imagine you are at TopRow 230, TopOff 0
@@ -385,7 +394,7 @@ scrollmap:  lda R_BANK          ; save bank
             ror                 ; put carry in hi bit (the other 7 bits don't matter for anything)
             sta SMIncDec
             asl                 ; restore carry
-            jsr gfxinit         ; go to bank 0, where (hires) graphics memory lives
+            jsr gfxinit         ; set up pointers and switch banks (paintline needs it)
             lda ShownPage       
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
@@ -563,7 +572,7 @@ clincnew:   lda $2000, x
             ; above covers one of the two graphics areas per page, now need
             ; to go get the other one, $2000 above the first one.
 clpgdone:   lda MemOffset
-            beq clpgdone        ; branch if we just finished both halves of the page
+            beq cldone        ; branch if we just finished both halves of the page
             lda #$00            ; second half finished, go back to do the first half
             sta MemOffset
             jmp clhalfpage
