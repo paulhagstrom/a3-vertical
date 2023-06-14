@@ -142,16 +142,15 @@ syncscroll: lda PgOneOff
 syncneeded: bcc ssptwohigh      ; branch away if page 1 is less than page 2
             ; page 1 is greater than page 2
             lda ShownPage
+            eor #$01
             lsr
-            ; carry clear if we're looking at p1, set if we're looking at p2
-            ; which coincidentally is exactly what we need to tell scrollmap
-            ; what direction to scroll the non-visible page.
+            ; carry set if we're looking at p1, clear if we're looking at p2
+            ; which tells scrollmap what direction to scroll the non-visible page
             bpl ssdoscroll      ; branch always
             ; page 2 is greater than page 1
 ssptwohigh: lda ShownPage
-            eor #$01
             lsr
-            ; carry set if we're looking at p2, clear if we're looking at p1
+            ; carry clear if we're looking at p1, set if we're looking at p2
             ; which tells scrollmap what direction to scroll the non-visible page
 ssdoscroll: jsr scrollmap
             sec                 ; tell the event loop we took substantial time
@@ -400,7 +399,7 @@ scrollmap:  lda R_BANK          ; save bank
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tax
             lda PgOneOff, x     ; scroll offset for nonvisible page 
-            bcs smdecn          ; branch away if we are decreasing nudge
+            bcs smdecn          ; branch away if we are decreasing nudge (carry still set/clear)
             ; we are increasing nudge (map scrolls upward)
             sta SMNVal          ; use current (smaller) offset for copylines
             adc #$01            ; carry is known to be clear, increase nudge
@@ -504,8 +503,8 @@ cldeclastb: lda $50, x
             ldy #$03
 cldecg:     ldx #$77
 cldecl:     lda $80, x          ; e.g., 2280->2300
-TargDecH = *+1
-            sta $2300, x
+TargDecH = *+2
+            sta $2300, x        ; INLINEADDR
             lda $00, x          ; e.g., 2200->2280
             sta $80, x
             dex
@@ -545,7 +544,7 @@ clinczero:  lda $28, x
             ldy #$03            ; move this many blocks of $77+$77 (sextuplets of lines)
 clincg:     ldx #$77
 clincl:     lda $00, x          ; e.g. 2100->2080
-TargIncH = *+1
+TargIncH = *+2
             sta $2080, x        ; INLINEADDR 
             lda $80, x          ; e.g. 2180->2100
             sta $00, x
@@ -564,7 +563,7 @@ clincrest:  lda LineBuffer, x
             bpl clincrest
             ; copy line 0 to B8
             ldx #$27
-SrcNewLn = *+1
+SrcNewLn = *+2
 clincnew:   lda $2000, x
             sta $D0, x
             dex
@@ -572,7 +571,7 @@ clincnew:   lda $2000, x
             ; above covers one of the two graphics areas per page, now need
             ; to go get the other one, $2000 above the first one.
 clpgdone:   lda MemOffset
-            beq cldone        ; branch if we just finished both halves of the page
+            beq cldone          ; branch if we just finished both halves of the page
             lda #$00            ; second half finished, go back to do the first half
             sta MemOffset
             jmp clhalfpage

@@ -54,7 +54,7 @@ NumLogs:    .byte   0                       ; number of logs on map
 ;           02- erase sprites on page B (1 tick?)
 ;           01- scroll page B to match page A (if they don't already match) (1 tick?)
 
-MoveDelay   = 6                             ; VBLs per game tick (3 seems about minimum possible)
+MoveDelay   = 5                             ; VBLs per game tick (3 seems about minimum possible)
 FlipTick    = 3                             ; Tick just after which the page flip happens.
 
 ; main game event loop
