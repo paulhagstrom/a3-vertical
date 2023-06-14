@@ -39,6 +39,22 @@
 ; require shifting 2 lines on the invisible page.  Ultimately this will wind
 ; up be simpler to handle.
 ;
+; To scroll. since we are moving one of every 8 lines, it's actually
+; pretty natural.  We can move each block of $80 ($77 really, with the
+; screen holes), either up $80 or down $80, to advance or retreat 8 lines.
+; Takes some care around the edges, but can be about as efficient as a
+; memory move generally, without needing to do a lot of computation about
+; what lines start where.
+;
+; Lines that correspond to addresses between $2000-23F7 (matches Apple II
+; layout).  Second half of these lines are in $4000-43F7, page 2 is
+; from $6000-9FF7.
+;
+; 2000: 00 40 80 08 48 88
+; 2100: 10 50 90 18 58 98
+; 2200: 20 60 A0 28 68 A8
+; 2300: 30 70 B0 38 78 B8
+;
 ; For sprites: We need them to be erased by the time we scroll the
 ; background.  The page-flipping strategy will thus look like this:
 ;
@@ -202,8 +218,8 @@ paintline:  lda YHiresLA, x     ; look up the bases for all four tile bytes
             lda ShownPage
             and #$01
             lsr                 ; carry set for page 2 clear for page 1
-            lsr                 ; $80 if page 2 and carry clear
-            lsr                 ; $40 if page 2 and carry clear
+            ror                 ; $80 if page 2 and carry clear
+            ror                 ; $40 if page 2 and carry clear
             pha                 ; save for setting page B
             adc YHiresHA, x
             sta PMLineA + 1
@@ -418,42 +434,6 @@ SMBankSave = *+1
             sta R_BANK
             rts
 
-;(.*)$ ; code fragment to detect page.
-;(.*)$             lda ShownPage
-;(.*)$             and #$01
-;(.*)$             lsr                 ; carry set for page 2 clear for page 1
-;(.*)$             lsr                 ; $80 if page 2 and carry clear
-;(.*)$             lsr                 ; $40 if page 2 and carry clear
-;(.*)$             pha                 ; save for setting page B
-;(.*)$             adc YHiresHA, x
-;(.*)$ 
-;(.*)$ ; memory move fragment from earlier
-;(.*)$ ; don't need to mess around with ZP really, except maybe could
-;(.*)$ ; use it for stashing the two lines we need to preserve during copying
-;(.*)$             lda #$60            ; beginning of page 1
-;(.*)$             sta CMSrc + 1
-;(.*)$             lda #$20            ; beginning of page 2
-;(.*)$             sta CMTrg + 1
-;(.*)$             ldy #$40            ; we are moving $40 pages
-;(.*)$             ldx #$00
-;(.*)$ CMSrc = *+1
-;(.*)$ cmloop:     lda $6000, x        ; INLINEADDR with 00 low byte
-;(.*)$ CMTrg = *+1
-;(.*)$             sta $2000, x        ; INLINEADDR with 00 low byte
-;(.*)$             inx
-;(.*)$             bne cmloop
-;(.*)$             inc CMSrc
-;(.*)$             inc CMTrg
-;(.*)$             dey
-;(.*)$             bne cmloop
-;(.*)$             rts
-
-; update this to be more like just a memory move, this is too fiddly
-; also ensure that it operates on the nonvisible page, whichever that is
-; mostly just want to copy addr+80 to addr (or addr to addr+80, depending on direction)
-; across both A and B graphics areas.  Go from 0 to 77 to get three lines at once.
-; with a couple of special cases (preserve two lines, copy line 0 into one of them)
-
 ; copylines rolls the whole screen (all lines below raster 7)
 ; raster line 0 is the new line that will be fed in at the appropriate edge
 ; call this after filling raster line 0 with the new line
@@ -466,152 +446,127 @@ SMBankSave = *+1
 ; on exit: ZP set to $1A00, no registers survive
 
 ScrollDir:  .byte 0             ; preserve entry carry in high bit
-LinesLeft:  .byte 0             ; lines remaining to draw
+MemOffset:  .byte 0             ; $0 for first 8K of page, $20 for second 8K
 
-copylines:  bcc clincnud        ; branch away if we are increasing nudge
-            ; decreasing smooth scroll parameter ("nudge")
-            tya                 ; this should be the new nudge value (current nudge-1)
-            adc #$B7            ; first target line is at the bottom (carry is set, we are adding $B8)
-            tay
-            sty ScrollDir       ; use for branching to subtract (negative number)
-            bmi clsettrg        ; branch always
-            ; increasing smooth scroll parameter ("nudge")
-clincnud:   tya                 ; for this we want the current nudge value (later will become this + 1)
-            adc #$08            ; first target line is at the top, carry known to be clear
-            tay
-            sty ScrollDir       ; use for branching to add (positive number)
-clsettrg:   lda #22             ; move 23 lines (last copying from buffer), countdown in LinesLeft
-            sta LinesLeft
-            lda YHiresS, y      ; set the first target line based on start line we were passed
-            sta TargS           ; target low, end of the line
-            lda YHiresHA, y
-            sta TargHA          ; target A high
-            clc
-            adc #$20            ; compute HB
-            sta TargHB          ; target B high
-clnext:     lda ScrollDir       ; restore carry from entry
-            asl
-            tya
-            bcs clsub           ; we are subtracting, go do that
-            adc #$08            ; source is 8 lines after target
-            bcc clprep          ; branch always
-clsub:      sbc #$08            ; source is 8 lines before target
-clprep:     tay
-            pha                 ; remember source line we computed for the next iteration's target
-clsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
-            sta SourceS
-            lda YHiresLA, y     ; source start-of-line low byte
-            sta SourceA         ; modify code in upcoming loop (page 1 source)
-            sta SourceB         ; modify code in upcoming loop (page 2 source)
-            lda YHiresHA, y
-            sta SourceA + 1     ; source A high
-            clc
-            adc #$20            ; compute HB
-            sta SourceB + 1     ; source B high
-TargHA = *+1
-            lda #INLINEVAR      ; point ZP at target A page
+LineBuffer  =   $428            ; we are not using any text after line 1
+
+copylines:  lda #$00
+            ror                 ; move carry to hi bit
+            sta ScrollDir       ; used for branching on direction later
+            lda #$20            ; start with second half of graphics page (e.g., $4000-5FFF)
+            sta MemOffset
+clhalfpage: lda ShownPage
+            eor #$01            ; switch focus to nonvisible page
+            and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
+            ror                 ; into carry
+            ror                 ; $80 for p2
+            ror                 ; $40 for p2, carry clear
+            adc YHiresA, y      ; high byte of first line on nonvisible page A
+            adc MemOffset       ; be in either first $2000 or second $2000 of the page
+            bit ScrollDir       ; will be negative if we are decreasing scroll
+            bpl clinc           ; branch if increasing scroll, first target also in first $100
+            ; decreasing scroll
+            ;           save 2380-23CF (lines 38 and 78, discard line B8)
+            ;           move 2300->2380 (30->38, 70->78, B0->B8)
+            ; loop 1:   move 2280->2300 (28->30, 68->70, A8->B0)
+            ;           move 2200->2280 (20->28, 60->68, A0->A8)
+            ; loop 2:   move 2180->2200 (18->20, 58->60, 98->A0)
+            ;           move 2100->2180 (10->18, 50->58, 90->98)
+            ; loop 3:   move 2080->2100 (08->10, 48->50, 88->90)
+            ;           move 2000->2180 (00->08, 40->48, 80->88) (puts new line in place)
+            ;           move saved line 38->40, saved line 78->80
+            sta SrcNewLn        ; line 0 address (first $100 of graphics)
+            adc #$03            ; if decreasing, first target is in last $100, e.g. $2300
             sta R_ZP
-TargS = *+1
-            ldx #INLINEVAR      ; start x at the end of the target line
-            ldy #$27            ; start y at the end of the source line
-SourceA = *+1
-clsrca:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
-            sta Zero, x         ; this address is at a page boundary, so x may be more than $27
+            sta TargDecH
+            ldx #$4F
+cldeclast:  lda $80, x          ; save lines $38/$78 for later (do not need $B8)
+            sta LineBuffer, x
+            lda $00, x          ; move 2300->2380
+            sta $80, x
             dex
-            dey
-            bpl clsrca
-TargHB = *+1
-            lda #INLINEVAR      ; point ZP at target B page
-            sta R_ZP
-            ldx TargS           ; start x at the end of the target line
-            ldy #$27            ; start y at the end of the source line
-SourceB = *+1
-clsrcb:     lda INLINEADDR, y   ; this address is modified to be exactly at the start of the line
-            sta Zero, x         ; this address is at a page boundary, so x may be more than $27
+            bpl cldeclast
+            ldx #$27            ; move line $B0 to $B8 (finish prior triplet)
+cldeclastb: lda $50, x
+            sta $D0, x
             dex
+            bpl cldeclastb
+            dec R_ZP            ; first pass, TargDecH now $23, R_ZP is $22
+            ldy #$03
+cldecg:     ldx #$77
+cldecl:     lda $80, x          ; e.g., 2280->2300
+TargDecH = *+1
+            sta $2300, x
+            lda $00, x          ; e.g., 2200->2280
+            sta $80, x
+            dex
+            bpl cldecl
             dey
-            bpl clsrcb
-            ; the source we just used will now become the target for the next one
-SourceS = *+1
-            lda #INLINEVAR
-            sta TargS
-            lda SourceA + 1
-            sta TargHA
-            lda SourceB + 1
-            sta TargHB
-            dec LinesLeft
-            beq cllast          ; last line source is an offscreen buffer
-            bmi cldone          ; if we have done everything, exit
-            pla                 ; lines remain, compute next source
-            tay
-            bne clnext          ; branch always
+            beq cldecdone       ; we've done all three, leave with ZP still at $20
+            dec TargDecH
+            dec R_ZP
+            bne cldecg          ; branch always
+cldecdone:  ldx #$4F
+cldecrest:  lda LineBuffer, x   ; move lines $38/$78 to $40/$80
+            sta $28, x
+            dex
+            bpl cldecrest
+            bmi clpgdone          ; branch always
+            ; increasing scroll 
+            ;           save 2028-234F (lines 40 and 80)
+            ;           move 20A8->2028 (48->40, 88->80, discard 08)
+            ; loop 1:   move 2100->2080 (10->08, 50->48, 90->88)
+            ;           move 2180->2100 (18->10, 58->50, 98->90)
+            ; loop 2:   move 2200->2180 (20->18, 60->58, A0->98)
+            ;           move 2280->2200 (28->20, 68->60, A8->A0)
+            ; loop 3:   move 2300->2280 (30->28, 70->68, B0->A8)
+            ;           move 2380->2300 (38->30, 78->70, B8->B0)
+            ;           move saved line 40->38, saved line 80->78
+            ;           move new line 00->B8
+clinc:      sta R_ZP
+            sta TargIncH
+            ldx #$4F            
+clinczero:  lda $28, x
+            sta LineBuffer, x   ; save lines $40/$80 for later
+            lda $A8, x          ; move lines $48->$40, $88->$80
+            sta $28, x
+            dex
+            bpl clinczero
+            inc R_ZP            ; first pass through, TargIncH is now $20, R_ZP is $21            
+            ldy #$03            ; move this many blocks of $77+$77 (sextuplets of lines)
+clincg:     ldx #$77
+clincl:     lda $00, x          ; e.g. 2100->2080
+TargIncH = *+1
+            sta $2080, x        ; INLINEADDR 
+            lda $80, x          ; e.g. 2180->2100
+            sta $00, x
+            dex
+            bpl clincl
+            dey
+            beq clincdone       ; we've done all three, leave with ZP still at $23
+            inc TargIncH
+            inc R_ZP
+            bne clincg          ; branch always
+            ; move lines $40 and $80, saved earlier, to $38 and $78.
+clincdone:  ldx #$4F
+clincrest:  lda LineBuffer, x
+            sta $80, x
+            dex
+            bpl clincrest
+            ; copy line 0 to B8
+            ldx #$27
+SrcNewLn = *+1
+clincnew:   lda $2000, x
+            sta $D0, x
+            dex
+            bpl clincnew
+            ; above covers one of the two graphics areas per page, now need
+            ; to go get the other one, $2000 above the first one.
+clpgdone:   lda MemOffset
+            beq clpgdone        ; branch if we just finished both halves of the page
+            lda #$00            ; second half finished, go back to do the first half
+            sta MemOffset
+            jmp clhalfpage
 cldone:     lda #$1A            ; restore ZP to $1A00
             sta R_ZP
             rts
-cllast:     ldy #$00            ; offscreen buffer line is line 0
-            pla                 ; toss out saved line
-            jmp clsetsrc
-
-; notes from before, maybe consolidate once I know what I'm doing here.
-; first 8 lines are low 00, next 8 are low 80, repeats for first 64 lines.
-; then 28 A8, then D0 50.  In blocks of 64 lines, it goes 20, 20, 21, 21, 22, 22, 23, 23.
-; so if I'm copying line 10 to 08, 18 to 10, etc., it's n to n-8.
-; 2000 holds line 0 (0-27), 40 (28-4F), 80 (50-77), 08 (80-A7), 48 (A8-CF), 88 (D0-F7)
-; 2000: 00 40 80 08 48 88
-; 2100: 10 50 90 18 58 98
-; 2200: 20 60 A0 28 68 A8
-; 2300: 30 70 B0 38 78 B8
-; 
-; 2100->2080, 2180->2100, 2200->2180, 2280->2200, 2300->2280, 2380->2300
-; 2028->2380, 20A8->2028, 2128->20A8, 21A8->2128, 2228->21A8, 22A8->2228, 2328->22A8, 23A8->2328
-; 2050->23A8, 20D0->2050, 2150->20D0, 21D0->2150, 2250->21D0, 22D0->2250, 2350->22D0, 23D0->2350
-; new line goes into 23D0-23F7.
-; generally speaking, I'm copying something to $80 before it.
-; so there's an antecedent problem if I try to do this will full pages, but maybe I can do it with $80s.
-; If I take X from 77 to 0 and copy
-; 2000+x -> 2380+x ([2000->2380], 2028->23A8, 2050->23D0) ([0->B8], 40->38, 80->78)
-; 2080+x -> 2000+x ([2080->2000], 20A8->2028, 20D0->2050) ([8->0], 48->40, 88->80)
-; 2100+x -> 2080+x (2100->2080, 2128->20A8, 2150->20D0) (10->8, 50->48, 90->88)
-; 2180+x -> 2100+x (2180->2100, 21A8->2128, 21D0->2150) (18->10, 58->50, 98->90)
-; 2200+x -> 2180+x (2200->2180, 2228->21A8, 2250->21D0) (20->18, 60->58, A0->98)
-; 2280+x -> 2200+x (2280->2200, 22A8->2228, 22D0->2250) (28->20, 68->60, A8->A0)
-; 2300+x -> 2280+x (2300->2280, 2328->22A8, 2350->22D0) (30->28, 70->68, B0->A8)
-; 2380+x -> 2300+x (2380->2300, 23A8->2328, 23D0->2350) (38->30, 78->70, B8->B0)
-; should save a few cycles.
-; but does it work? Do I ever overwrite something I need later?
-; if I start at 2080, I'm ok to 2380, but I overwrite 40 and 80 and need those for 2000.
-; I draw the new line at B8.
-; So, it's basically the first line that is at risk, 2000+x
-; I need to do that before 2080+x but it interacts with 2380+x
-; I don't need 0->B8 (though I can use it to draw the new line actually)
-; I don't need 8->0
-; not sure I really gain a lot here.
-; might as well just go from 27 to 0 on 23 different unrolled lines.
-; but if I unroll fully then I can't finish in the VBL. As detailed earlier.
-; 
-;the only issues are writing line 40 to 38 and 80 to 78 since those get overwritten.
-; can I cache those before VBL?
-; so, stash 2028-20F7 somewhere, VBL.
-; point ZP at 20
-; ldy #$04      ;2
-; page:
-; ldx #$80      ;2
-; bne skip      ;3
-; up:
-; ldx #$00      ;2
-; skip:
-; lda $80, x    ;4
-; sta $00, x    ;4
-; inx           ;2
-; bne up        ;3/2 [13 per loop, 256 loops, 3328 cycles]
-; bit ZP        ;4 test to see if we are in $40 or $20
-; bvc inhi      ;3/2 branch if in $20
-; inc ZP        ;6 if we're in $40, we want to shift to $21
-; inhi:
-; lda ZP        ;4
-; eor #$60      ;2 switch between $20 and $40
-; sta ZP        ;4
-; dey           ;2
-; bne page      ;3/2 [9+2 overhead]
-; 
-; 
