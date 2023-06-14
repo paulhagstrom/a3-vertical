@@ -271,7 +271,7 @@ paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             jsr gfxinit         ; set up pointers and switch banks
             lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
-            lda TopRow          ; map line of the top row on the screen
+            lda PgOneTop        ; map line of the top row on the screen
             clc
             adc #22             ; +22 to get to map line of bottom row
             sta ZCurrMapL       ; becomes the current line
@@ -461,7 +461,7 @@ clhalfpage: lda ShownPage
             ror                 ; into carry
             ror                 ; $80 for p2
             ror                 ; $40 for p2, carry clear
-            adc YHiresA, y      ; high byte of first line on nonvisible page A
+            adc YHiresHA, y     ; high byte of first line on nonvisible page A
             adc MemOffset       ; be in either first $2000 or second $2000 of the page
             bit ScrollDir       ; will be negative if we are decreasing scroll
             bpl clinc           ; branch if increasing scroll, first target also in first $100
