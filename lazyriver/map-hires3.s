@@ -103,12 +103,10 @@
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
 
-; movement processing happens on the VBL downbeat, so wait until the next one to 
-; update graphics.
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
 ; called always but if no scrolling is needed, it exits quickly with carry clear.
-; if it does scroll, it will exit with carry set to indicate that VBL is probably used up.
-; value for NeedScroll is: 0=stop, neg=map down/dec off, pos=map up/inc off
+; If it does scroll, it will exit with carry set to indicate that VBL is probably used up.
+; value for NeedScroll is: 0=stop, neg=map down/dec offset, pos=map up/inc offset
 
 fixscroll:  clc                 ; carry clear = both "scroll up" and "was quick"
 NeedScroll = *+1
@@ -124,7 +122,8 @@ scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll)
 noscroll:   rts
 
 ; synchronize the scroll on the page we are not looking at with the scroll
-; of the page we are looking at.
+; of the page we are looking at.  Happens just after we flipped, so we need
+; to bring them back into alignment.
 ; PgOneOff and PgTwpOff will always be either equal or one apart.
 ; if they are equal, quit quickly, if they're one apart, bring them together.
 ; if offset 1 > offset 2 and we are looking at page 1, clc (increase p2)
@@ -133,24 +132,27 @@ noscroll:   rts
 ; if offset 2 > offset 1 and we are looking at page 2, clc (increase p1)
 ; scrollmap always operates on the page we are not looking at
 
-syncscroll: lda PgOneOff
+syncscroll: lda PgOneTop
+            cmp PgTwoTop
+            bne syncneeded      ; branch if top row is different - sync is necessary
+            lda PgOneOff        ; if rows are the same, check if offsets are the same
             cmp PgTwoOff
-            bne syncneeded
+            bne syncneeded      ; branch if offset is different - sync is necessary
             clc                 ; equal also means carry set, so need to clear
             rts                 ; return, indicating that we spent no time
             ; sync needed
 syncneeded: bcc ssptwohigh      ; branch away if page 1 is less than page 2
             ; page 1 is greater than page 2
             lda ShownPage
-            eor #$01
             lsr
-            ; carry set if we're looking at p1, clear if we're looking at p2
+            ; carry clear (inc p2) if we see p1, set (dec p1) if we see p2
             ; which tells scrollmap what direction to scroll the non-visible page
             bpl ssdoscroll      ; branch always
             ; page 2 is greater than page 1
 ssptwohigh: lda ShownPage
+            eor #$01
             lsr
-            ; carry clear if we're looking at p1, set if we're looking at p2
+            ; carry set (dec p2) if we see p1, clear (inc p1) if we see p2
             ; which tells scrollmap what direction to scroll the non-visible page
 ssdoscroll: jsr scrollmap
             sec                 ; tell the event loop we took substantial time
@@ -404,16 +406,16 @@ scrollmap:  lda R_BANK          ; save bank
             sta SMNVal          ; use current (smaller) offset for copylines
             adc #$01            ; carry is known to be clear, increase nudge
             and #$07
-            bne smincnow        ; nudge did not wrap
+            bne smincnowr       ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
             inc PgOneTop, x
-smincnow:   sta PgOneOff, x     ; store new scroll offset value for nonvisible page
+smincnowr:  sta PgOneOff, x     ; store new scroll offset value for nonvisible page
             lda PgOneTop, x
-            adc #21             ; carry is still known to be clear, new line is in bottom row
+            adc #21             ; carry is still known clear, new line to draw is in bottom row
             tax
             bcc smdraw          ; branch always
             ; we are decreasing nudge (map scrolls downward)
-smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the same, proceed
+smdecn:     bne smdecnowr       ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
             dec PgOneTop, x     ; move top of map up one line
             lda #$07
@@ -421,9 +423,9 @@ smdecn:     bne smdecnow        ; nudge will not wrap, top map line stays the sa
             sta SMNVal          ; use new (smaller) offset for copylines
             bne smdrawtop       ; branch always
             ; nudge will not wrap, so map line will not change
-smdecnow:   dec PgOneOff, x
+smdecnowr:  dec PgOneOff, x
             lda PgOneOff, x
-            sta SMNVal
+            sta SMNVal          ; use new (smaller) offset for copylines
 smdrawtop:  lda PgOneTop, x
             tax
 smdraw:     jsr tilecache       ; cache the tiles for map line

@@ -73,7 +73,7 @@ drawstatus: lda #<TextPageA
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr
-            lda SMIncDec
+            lda PgTwoTop
             jmp drawnumber
             ; DEBUG - END
             ldx #$02
