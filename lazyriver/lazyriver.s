@@ -21,7 +21,8 @@ CodeStart:  jmp gameinit
             .include "gamemove.s"
             .include "interrupts.s"
             .include "lookups.s"
-            .include "map-hires3.s"
+            .include "mapscroll.s"
+            .include "sprites.s"
             .include "status-text40.s"
 
 Seed:       .byte   0                       ; current place in the "random" number table
@@ -80,8 +81,8 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
 offtick:
             jsr fixscroll                   ; scroll nonvisible page if movement is needed
             bcs eventloop                   ; go back around if we spent some time
-            ;jsr setsprite                   ; draw sprites on nonvisible page
-            ;bcs eventloop                   ; go back around if we spent some time
+            jsr setsprites                  ; draw sprites on nonvisible page
+            bcs eventloop                   ; go back around if we spent some time
             ; if we made it here then we are ready to flip... unless we already did
 FlipDone = *+1
             lda #INLINEVAR                  ; nonzero if we have flipped this game clock cycle
@@ -96,8 +97,8 @@ stallvbl:   cmp VBLTick
             sta ShownPage                   ; this is inline in HBL interrupt handler
             inc FlipDone                    ; no more flipping during this game clock cycle
             jsr fixnudge                    ; set the smooth scroll parameter on visible page
-flipped:    ;jsr clrsprite                   ; erase sprites on nonvisible page
-            ;bcs eventloop                   ; go back around if we spent some time
+flipped:    jsr clrsprites                  ; erase sprites on nonvisible page
+            bcs eventloop                   ; go back around if we spent some time
             jsr syncscroll                  ; scroll nonvisible page to match visible one
             bcs eventloop                   ; go back around if we spent some time
             jsr drawstatus                  ; redraw score, burn a few cycles
