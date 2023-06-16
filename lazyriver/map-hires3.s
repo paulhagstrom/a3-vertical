@@ -326,72 +326,6 @@ CPBankSave = *+1
             sta R_BANK
             rts
 
-; imagine you are at TopRow 230, TopOff 0
-; and you increase the nudge, which means you are now drawing from 1-7 and then 0.
-; this has the effect of scrolling the map up the screen
-; you need to copy line 0 of 231 to line 0 of 230.
-; and so on down the screen until you get to the last row.
-; there, you need to copy line 0 of 253 (230+23) into line 0 of 252 (230+22)
-; nudge went from 0 to 1 and we are doing everything wrt the lowest of these, 0.
-
-; now imagine you are back at TopRow 230, TopOff 0
-; and you decrease the nudge, which means you are now drawing 7 and then 0-6.
-; this should have the effect of scrolling the map down the screen
-; you need to copy line 7 of 229 to line 7 of 230, and so on down the screen.
-; except for this to work you have to go up the screen.
-; copy line 7 of 251 into line 7 of 252, then of 250 into 251, etc.
-; nudge went from 0 to 7 and we are doing everything wrt the lowest of these, 7
-; 
-
-; in general, increasing nudge from oldnudge to oldnudge + 1
-; this makes the screen scroll up; abstractly:
-; copy line 1 of tile 2 to line 1 of tile 1, etc.
-; then draw new line 1 of tile 24 drawn from line 1 of "tile 25"
-; specifically:
-; copy graphics line 10 + oldnudge to 08 + oldnudge
-; copy graphics line 18 + oldnudge to 10 + oldnudge
-; ...there are C0 (192) total lines ...
-; copy graphics line A8 + oldnudge to B0 + oldnudge
-; copy graphics line B0 + oldnudge to B8 + oldnudge
-; draw map line for graphics line C0 + oldnudge on graphics line B8 + oldnudge
-; and then advance nudge to become oldnudge + 1
-;
-; to move back up (decreasing nudge from nudge + 1 to nudge)
-; this makes the screen scroll down
-; abstractly: copy line 8 of tile 23 to line 8 of tile 24, etc.
-; then draw new line 8 of tile 1 drawn from line 8 of "tile 0"
-; specifically:
-; copy graphics line B0 + nudge to B8 + nudge
-; copy graphics line A8 + nudge to B0 + nudge
-; ...there are C0 (192) total lines ...
-; copy graphics line 10 + nudge to 18 + nudge
-; copy graphics line 08 + nudge to 10 + nudge
-; draw map line for graphics line 00 + nudge on graphics line 08 + nudge
-
-; as usual, it is hard to wrap my head around this.
-; Suppose TopRow is 232 and TopOff is 0, where we start.
-; and the river scrolls down.
-; so the old line 08 is now displayed on line 09
-; TopOff becomes 7, need to draw new top line on line 0F (will draw at top)
-; so I load in the map line 231 (post-move TopRow), and buffer line 7 (post-move TopOff) into 0
-; copy all the line 7s down from end of screen to top 
-; if it were going the other way,
-; TopOff becomes 1, TopRow stays 232.
-; now I need to copy from top to bottom, and then buffer line TopRow+24's line old offset (0) into 0
-; this is pretty doable.
-
-; only 23 full map lines fit on the screen, but if we scroll a pixel, then we're
-; seeing parts of 24 map lines (22 fully, 2 partially)
-; so: except when offset is 0, the relevant bottom map line is
-; top map line + 23.
-
-; increase nudge goes from 7 to 0
-; means we were displaying lines 0-6 of maptop + 1 at the top
-; so we need to copy line 0 of maptop + 1 and then increase maptop.
-; or increase maptop and then copy line 0 of maptop.
-; at scroll 0, maptop is at the top, maptop+22 is at the bottom
-; at scroll 1, maptop is at the top, maptop+23 provides the new last line.
-
 ; scrollmap will effect a vertical movement of the nonvisible screen.
 ; locates new line and puts it in raster 0+offset, then calls copylines to do the scroll.
 ; enter with:
@@ -453,21 +387,6 @@ SMBankSave = *+1
             lda #INLINEVAR      ; restore the bank
             sta R_BANK
             rts
-
-; a
-; b
-; c
-; d
-; e
-; f
-; g
-; h
-; if we are increasing offset, we're coming from the top
-; from 0 to 1, we need to copy a (0 pre) from next 8 to the bottom line
-; from 1 to 2, we need to copy b (1 pre) from next 8 to the bottom line
-; if we are decreasing offset, we're coming from the bottom
-; from 1 to 0, we need to copy a (0 post) from prev 8 to the top line (a)
-; from 0 to 7, we need to copy h (7 post) from prev 8 to the top line (h)
 
 ; copylines rolls the whole screen (all lines below raster 7)
 ; raster line 0 is the new line that will be fed in at the appropriate edge
