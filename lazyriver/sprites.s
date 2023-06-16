@@ -1,3 +1,6 @@
+; lazyriver
+; sprite routines
+
 ; A sprite will be a 7x8 block, which corresponds to 32 bytes.  But given that
 ; it can be at any x-coordinate, we need to consider it to be a 14x8 block,
 ; 64 bytes.  We will pre-shift them so that we have these bytes ready to go.
@@ -23,9 +26,13 @@
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
 
+; draw sprites on nonvisible page
+
 setsprites:
             rts
-            
+
+; erase sprites on nonvisible page
+
 clrsprites:
             rts
             

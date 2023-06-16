@@ -127,83 +127,108 @@ xlatequad:
 ; We will pre-shift these into proper A3 Hires bytes, so the definitions
 ; will be done using nibble-aligned colors, with the last nibble unused.
 
+; definitions of graphics colors
+; can use in bytes like
+; .byte cLB * 16 + cMg
+cbk = %0000  ; Black
+cMg = %0001  ; Magenta
+cDB = %0010  ; Dark blue
+cPr = %0011  ; Purple
+cGn = %0100  ; Dark green
+cGy = %0101  ; Grey1
+cMB = %0110  ; Medium blue
+cLB = %0111  ; Light blue
+cBn = %1000  ; Brown
+cOr = %1001  ; Orange
+cGY = %1010  ; Grey2
+cPk = %1011  ; Pink
+cGN = %1100  ; Green
+cYw = %1101  ; Yellow
+cAq = %1110  ; Aqua
+cWh = %1111  ; White
+
+; graphics macro to tile 7 pixels into 4 bytes for easier editing/reading
+.macro  tile    arg1, arg2, arg3, arg4, arg5, arg6, arg7
+        .byte   arg2 * 16 + arg1, arg4 * 16 + arg3, arg6 * 16 + arg5, arg7 * 16
+.endmacro
+
 ; Map graphics
 ; TODO - later see if coastlines can join better to be smoother
 
 MapTiles:
 ; Land 1
-            .byte   %01000100, %01000100, %01001100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001100, %01000100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001000, %01000100, %01000000
-            .byte   %01000100, %01000100, %11010100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
+            tile    cGn, cGn, cGn, cGn, cGn, cGN, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cPk, cGn, cYw, cGn
+            tile    cGn, cGn, cGn, cGn, cYw, cYw, cYw
+            tile    cGn, cGn, cGn, cGn, cGn, cYw, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
 ; Land 2
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001100, %01000100, %01000000
-            .byte   %01000100, %01000100, %01000100, %11010000
-            .byte   %01000100, %01000100, %10000100, %01000000
-            .byte   %01000100, %01000100, %01001100, %01000000
-            .byte   %01000100, %01001000, %01000100, %01000000
-            .byte   %01000100, %01000100, %11010100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGN, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cYw
+            tile    cGn, cGn, cGn, cPk, cBn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGN, cGn
+            tile    cGn, cGn, cGn, cGn, cYw, cGn, cGn
+            tile    cGn, cGn, cBn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
 ; Land 3
-            .byte   %01000100, %01000100, %01001100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001100, %01000100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %11000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001000, %01000100, %01000000
-            .byte   %01000100, %10000100, %11010100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cBn, cBn, cGn, cGn, cGn
+            tile    cGN, cGn, cBn, cBn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cOr, cGn, cGn, cGn, cGn
+            tile    cGn, cGN, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
 ; Land 4
-            .byte   %01000100, %01000100, %01001100, %01000000
-            .byte   %01000100, %01000100, %01000100, %10000000
-            .byte   %01000100, %01000100, %01000100, %01000000
-            .byte   %01000100, %01001100, %01000100, %11010000
-            .byte   %01000100, %11000100, %01000100, %01000000
-            .byte   %11000100, %01000100, %11010100, %01000000
-            .byte   %01000100, %01001000, %01000100, %01000000
-            .byte   %01000100, %01000100, %01000100, %01000000
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGN, cGn, cGn, cGn, cGn
+            tile    cGn, cGN, cGN, cGN, cGN, cGn, cGn
+            tile    cGn, cGN, cGn, cGN, cGN, cGn, cGn
+            tile    cGn, cGn, cGN, cGN, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cBn, cGn
+            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
 
 ; Water 1
-            .byte   %00100010, %00100010, %00100010, %00100000
-            .byte   %00100110, %00100010, %00100010, %00100000
-            .byte   %00100010, %00100010, %11100010, %00100000
-            .byte   %01100010, %00100010, %00100010, %01100000
-            .byte   %00100010, %01100010, %00100010, %00100000
-            .byte   %00100010, %00100010, %01100010, %01110000
-            .byte   %11100010, %00100010, %00100010, %00100000
-            .byte   %00100010, %00100010, %00100010, %00100000
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cAq, cDB, cDB
+            tile    cMB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cMB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cMB, cDB, cDB, cDB
+            tile    cAq, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
 ; Water 2
-            .byte   %00100010, %00100010, %00100010, %00100000
-            .byte   %00100110, %00100010, %00100010, %00100000
-            .byte   %00100010, %00100010, %11100010, %00100000
-            .byte   %00100010, %01100010, %00100010, %00100000
-            .byte   %01100010, %00100010, %00100010, %01100000
-            .byte   %00100010, %00100010, %01100010, %01110000
-            .byte   %00100010, %00100010, %00100010, %00100000
-            .byte   %11100010, %00100010, %00100010, %00100000
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cAq, cDB, cDB, cLB, cDB, cDB
+            tile    cMB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cMB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cAq, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
 ; Water 3
-            .byte   %00100010, %00100010, %00100010, %00100000
-            .byte   %00100110, %00100010, %00100010, %00100000
-            .byte   %00100010, %11100010, %01100010, %01100000
-            .byte   %01100010, %00100010, %00100010, %01100000
-            .byte   %11100010, %00100010, %00100010, %00100000
-            .byte   %00100010, %01100010, %11100010, %00100000
-            .byte   %00100010, %00100010, %01100010, %01110000
-            .byte   %00100010, %00100010, %00100010, %00100000
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cLB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cMB, cLB, cDB, cDB
+            tile    cMB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cAq, cDB, cAq, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
 ; Water 4
-            .byte   %00100010, %00100010, %00100010, %00100000
-            .byte   %00100110, %11100010, %00100010, %00100000
-            .byte   %01100010, %00100010, %00100010, %01100000
-            .byte   %00100010, %01100010, %00100010, %00100000
-            .byte   %01100010, %00100010, %01100010, %01110000
-            .byte   %00100010, %00100010, %11100010, %00100000
-            .byte   %11100010, %00100010, %00100010, %00100000
-            .byte   %00100010, %00100010, %00100010, %00100000
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cLB, cDB, cDB, cDB, cAq
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cAq, cDB, cDB, cDB
+            tile    cMB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cLB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
+            tile    cDB, cDB, cDB, cDB, cDB, cDB, cDB
 
 ; Object graphics
 ; These have both a 1-bit mask and a pixel array
@@ -219,11 +244,11 @@ MapTiles:
             .byte   %01111111
             .byte   %00111110
             
-            .byte   %00000000, %00001011, %00000000, %00000000
-            .byte   %00000000, %10110001, %10110000, %00000000
-            .byte   %00001011, %00010001, %00011011, %00000000
-            .byte   %10111000, %00010001, %00010001, %10110000
-            .byte   %10111000, %01110111, %01110001, %10110000
-            .byte   %10111000, %01110111, %01110001, %10110000
-            .byte   %10111001, %00010001, %00010001, %11010000
-            .byte   %00001011, %10111011, %10111011, %00000000
+            tile    cbk, cbk, cbk, cPk, cbk, cbk, cbk
+            tile    cbk, cbk, cPk, cMg, cPk, cbk, cbk
+            tile    cbk, cPk, cMg, cMg, cMg, cPk, cbk
+            tile    cPk, cMg, cMg, cMg, cMg, cMg, cPk
+            tile    cPk, cMg, cLB, cLB, cLB, cMg, cPk
+            tile    cPk, cMg, cLB, cLB, cLB, cMg, cPk
+            tile    cPk, cOr, cMg, cMg, cMg, cMg, cPk
+            tile    cbk, cPk, cPk, cPk, cPk, cPk, cbk
