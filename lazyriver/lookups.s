@@ -1,6 +1,6 @@
 ; Graphics lookup tables.
 
-YHiresLA:   ; low byte of address of start of each hires line
+YHiresL:   ; low byte of address of start of each hires line
             .byte $00, $00, $00, $00, $00, $00, $00, $00
             .byte $80, $80, $80, $80, $80, $80, $80, $80
             .byte $00, $00, $00, $00, $00, $00, $00, $00
@@ -26,59 +26,7 @@ YHiresLA:   ; low byte of address of start of each hires line
             .byte $50, $50, $50, $50, $50, $50, $50, $50
             .byte $D0, $D0, $D0, $D0, $D0, $D0, $D0, $D0
 
-YHiresLB:   ; YHiresLA + 1, lookup is a cycle faster than adding on the fly
-            .byte $01, $01, $01, $01, $01, $01, $01, $01
-            .byte $81, $81, $81, $81, $81, $81, $81, $81
-            .byte $01, $01, $01, $01, $01, $01, $01, $01
-            .byte $81, $81, $81, $81, $81, $81, $81, $81
-            .byte $01, $01, $01, $01, $01, $01, $01, $01
-            .byte $81, $81, $81, $81, $81, $81, $81, $81
-            .byte $01, $01, $01, $01, $01, $01, $01, $01
-            .byte $81, $81, $81, $81, $81, $81, $81, $81
-            .byte $29, $29, $29, $29, $29, $29, $29, $29
-            .byte $A9, $A9, $A9, $A9, $A9, $A9, $A9, $A9
-            .byte $29, $29, $29, $29, $29, $29, $29, $29
-            .byte $A9, $A9, $A9, $A9, $A9, $A9, $A9, $A9
-            .byte $29, $29, $29, $29, $29, $29, $29, $29
-            .byte $A9, $A9, $A9, $A9, $A9, $A9, $A9, $A9
-            .byte $29, $29, $29, $29, $29, $29, $29, $29
-            .byte $A9, $A9, $A9, $A9, $A9, $A9, $A9, $A9
-            .byte $51, $51, $51, $51, $51, $51, $51, $51
-            .byte $D1, $D1, $D1, $D1, $D1, $D1, $D1, $D1
-            .byte $51, $51, $51, $51, $51, $51, $51, $51
-            .byte $D1, $D1, $D1, $D1, $D1, $D1, $D1, $D1
-            .byte $51, $51, $51, $51, $51, $51, $51, $51
-            .byte $D1, $D1, $D1, $D1, $D1, $D1, $D1, $D1
-            .byte $51, $51, $51, $51, $51, $51, $51, $51
-            .byte $D1, $D1, $D1, $D1, $D1, $D1, $D1, $D1
-                  
-YHiresS:    ; low byte of address of END of each hires line (for stack)
-            .byte $27, $27, $27, $27, $27, $27, $27, $27
-            .byte $A7, $A7, $A7, $A7, $A7, $A7, $A7, $A7
-            .byte $27, $27, $27, $27, $27, $27, $27, $27
-            .byte $A7, $A7, $A7, $A7, $A7, $A7, $A7, $A7
-            .byte $27, $27, $27, $27, $27, $27, $27, $27
-            .byte $A7, $A7, $A7, $A7, $A7, $A7, $A7, $A7
-            .byte $27, $27, $27, $27, $27, $27, $27, $27
-            .byte $A7, $A7, $A7, $A7, $A7, $A7, $A7, $A7
-            .byte $4F, $4F, $4F, $4F, $4F, $4F, $4F, $4F
-            .byte $CF, $CF, $CF, $CF, $CF, $CF, $CF, $CF
-            .byte $4F, $4F, $4F, $4F, $4F, $4F, $4F, $4F
-            .byte $CF, $CF, $CF, $CF, $CF, $CF, $CF, $CF
-            .byte $4F, $4F, $4F, $4F, $4F, $4F, $4F, $4F
-            .byte $CF, $CF, $CF, $CF, $CF, $CF, $CF, $CF
-            .byte $4F, $4F, $4F, $4F, $4F, $4F, $4F, $4F
-            .byte $CF, $CF, $CF, $CF, $CF, $CF, $CF, $CF
-            .byte $77, $77, $77, $77, $77, $77, $77, $77
-            .byte $F7, $F7, $F7, $F7, $F7, $F7, $F7, $F7
-            .byte $77, $77, $77, $77, $77, $77, $77, $77
-            .byte $F7, $F7, $F7, $F7, $F7, $F7, $F7, $F7
-            .byte $77, $77, $77, $77, $77, $77, $77, $77
-            .byte $F7, $F7, $F7, $F7, $F7, $F7, $F7, $F7
-            .byte $77, $77, $77, $77, $77, $77, $77, $77
-            .byte $F7, $F7, $F7, $F7, $F7, $F7, $F7, $F7
-                  
-YHiresHA:   ; high byte of address of each hires line on page $20
+YHiresH:   ; high byte of address of each hires line on page $20
             .byte $20, $24, $28, $2C, $30, $34, $38, $3C
             .byte $20, $24, $28, $2C, $30, $34, $38, $3C
             .byte $21, $25, $29, $2D, $31, $35, $39, $3D
@@ -103,32 +51,6 @@ YHiresHA:   ; high byte of address of each hires line on page $20
             .byte $22, $26, $2A, $2E, $32, $36, $3A, $3E
             .byte $23, $27, $2B, $2F, $33, $37, $3B, $3F
             .byte $23, $27, $2B, $2F, $33, $37, $3B, $3F
-
-YHiresHB:   ; high byte of address of each hires line on page $40
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
 
 ; I took DOOM's "random" numbers.
 ; https://github.com/id-Software/DOOM/blob/77735c3ff0772609e9c8d29e3ce2ab42ff54d20b/linuxdoom-1.10/m_random.c#L27

@@ -1,6 +1,5 @@
 ; lazyriver
 ; A3 hires display map routines
-
 ; Smooth scrolling can dramatically reduce the amount of data that needs to
 ; be moved to scroll the entire screen, since you only need to move 24 lines
 ; instead of 192.  However, even moving 24 lines is a lot of data, and it is
@@ -40,7 +39,7 @@
 ; up be simpler to handle.
 ;
 ; To scroll. since we are moving one of every 8 lines, it's actually
-; pretty natural.  We can move each block of $80 ($77 really, with the
+; pretty natural.  We can move each block of $80 ($77 really, given the
 ; screen holes), either up $80 or down $80, to advance or retreat 8 lines.
 ; Takes some care around the edges, but can be about as efficient as a
 ; memory move generally, without needing to do a lot of computation about
@@ -105,7 +104,7 @@
 
 ; This checks to see if scrolling is needed (domove communicates via NeedScroll).
 ; called always but if no scrolling is needed, it exits quickly with carry clear.
-; If it does scroll, it will exit with carry set to indicate that VBL is probably used up.
+; If it does scroll, it will exit with carry set to indicate significant time elapsed.
 ; value for NeedScroll is: 0=stop, neg=map down/dec offset, pos=map up/inc offset
 
 fixscroll:  clc                 ; carry clear = both "scroll up" and "was quick"
@@ -193,8 +192,8 @@ gfxinit:    lda #$82            ; map is bank 2
             lda #$34            ; tile graphics start at $3400
             sta ZPtrA + 1
             lda #$00
-            sta R_BANK          ; move to bank zero for the graphics
             sta ZPtrA           ; tile graphics low byte
+            sta R_BANK          ; move to bank zero for the graphics
             rts
 
 ; paint a single line from cached tiles on the nonvisible page
@@ -210,55 +209,53 @@ gfxinit:    lda #$82            ; map is bank 2
 ; (That is: tile 3 is filling bytes 6 and 7 on the screen)
 ; does not preserve A, X, or Y.
 
-paintline:  lda YHiresLA, x     ; look up the bases for all four tile bytes
-            sta PMLineA
-            sta PMLineB
-            lda YHiresLB, x
-            sta PMLineC
-            sta PMLineD
+paintline:  lda YHiresL, x      ; look up the bases for all four graphics bytes
+            sta PLLineA         ; e.g., $00 ($2000, $2001)
+            sta PLLineB
+            clc
+            adc #$01
+            sta PLLineC         ; e.g., $01 ($2001, $4001)
+            sta PLLineD
             lda ShownPage
             eor #$01            ; focus on unshown page
             and #$01
-            lsr                 ; carry set for page 2 clear for page 1
-            ror                 ; $80 if page 2 and carry clear
-            ror                 ; $40 if page 2 and carry clear
-            pha                 ; save for setting page B
-            adc YHiresHA, x
-            sta PMLineA + 1
-            sta PMLineC + 1
-            pla                 ; $40 if page 2, 0 if page 1, carry still clear
-            adc YHiresHB, x
-            sta PMLineB + 1
-            sta PMLineD + 1
+            lsr                 ; carry set if p2 unshown, clear if p1 unshown
+            ror                 ; carry clear, $80 if p2 unshown, $00 if p1 unshown
+            ror                 ; carry clear, $40 if p2 unshown, $00 if p1 unshown
+            adc YHiresH, x
+            sta PLLineA + 1     ; e.g. $2000, $6000
+            sta PLLineC + 1
+            adc #$20            ; carry is known to be clear, move to page B
+            sta PLLineB + 1     ; e.g. $4000, $8000
+            sta PLLineD + 1
             tya                 ; line of tile to draw
             asl
             asl                 ; x4 (each line in tile is 4 bytes)
             sta ZTileOff        ; remember this for reuse later
-            clc                 ; clear for addition, will remain clear
             lda #19             ; start at the last tile column
             sta ZMapX
 pmraster:   ldx ZMapX           ; tile column
             lda ZTileCache, x   ; load cached tile art start offset
-            adc ZTileOff        ; add line offset
+            adc ZTileOff        ; add line offset, carry should still be clear
             tay
             txa
             asl                 ; tile column x2 for graphics memory offset
             tax
             lda (ZPtrA), y      ; first byte of tile graphics
-PMLineA = *+1
-            sta INLINEADDR, x   ; put in graphics page $20
+PLLineA = *+1
+            sta INLINEADDR, x   ; put in graphics page, e.g., $2000
             iny
             lda (ZPtrA), y
-PMLineB = *+1
-            sta INLINEADDR, x   ; put in graphics page $40
+PLLineB = *+1
+            sta INLINEADDR, x   ; put in graphics page, e.g., $4000
             iny
             lda (ZPtrA), y
-PMLineC = *+1
-            sta INLINEADDR, x   ; put in graphics page $20, next byte
+PLLineC = *+1
+            sta INLINEADDR, x   ; put in graphics page, e.g., $2001
             iny
             lda (ZPtrA), y
-PMLineD = *+1
-            sta INLINEADDR, x   ; put in graphics page $40, next byte
+PLLineD = *+1
+            sta INLINEADDR, x   ; put in graphics page, e.g., $4001
             dec ZMapX
             bpl pmraster
             rts
@@ -269,7 +266,7 @@ PMLineD = *+1
 ; will be followed by a call to copypage that will copy our work over to page 1
 
 paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 ZP) 
-            sta PMBankSave      ; save it inline within later restore code.
+            sta PPBankSave      ; save it inline within later restore code.
             jsr gfxinit         ; set up pointers and switch banks (paintline needs it)
             lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
@@ -279,24 +276,23 @@ paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             sta ZCurrMapL       ; becomes the current line
             lda #23
             sta ZLinesLeft
-pmgetmap:   ldx ZCurrMapL
+ppgetmap:   ldx ZCurrMapL
             jsr tilecache
             ; go through the 8 raster lines for this map tile
             lda #$07
             sta ZCurrOff
-pmtile:     ldx ZCurrScrL
+pptile:     ldx ZCurrScrL
             ldy ZCurrOff
             jsr paintline
-            ; move to next raster line in tile
-            dec ZCurrScrL
-            dec ZCurrOff
-            bpl pmtile
+            dec ZCurrScrL       ; move to next raster line in display for tile
+            dec ZCurrOff        ; move to next line in tile data
+            bpl pptile
             ; move to next map line (moving up the screen)
             dec ZCurrMapL
             dec ZLinesLeft
-            bne pmgetmap
+            bne ppgetmap
             ; painting map is finished, restore bank and exit
-PMBankSave = *+1
+PPBankSave = *+1
             lda #INLINEVAR
             sta R_BANK
             rts
@@ -315,15 +311,15 @@ copypage:   lda R_BANK
             ldy #$40            ; we are moving $40 pages
             ldx #$00
 CMSrcPg = *+2
-cmloop:     lda $6000, x        ; INLINEADDR with 00 low byte
+cploop:     lda $6000, x        ; INLINEADDR with 00 low byte
 CMTrgPg = *+2
             sta $2000, x        ; INLINEADDR with 00 low byte
             inx
-            bne cmloop
+            bne cploop
             inc CMSrcPg
             inc CMTrgPg
             dey
-            bne cmloop
+            bne cploop
             ; copying page is finished, restore bank and exit
 CPBankSave = *+1
             lda #INLINEVAR
@@ -384,15 +380,27 @@ CPBankSave = *+1
 ; now I need to copy from top to bottom, and then buffer line TopRow+24's line old offset (0) into 0
 ; this is pretty doable.
 
-; scrollmap will effect a vertical movement of the map regions of the nonvisible screen.
-; locates new line and puts it in raster 0, then calls copylines to do the scroll.
+; only 23 full map lines fit on the screen, but if we scroll a pixel, then we're
+; seeing parts of 24 map lines (22 fully, 2 partially)
+; so: except when offset is 0, the relevant bottom map line is
+; top map line + 23.
+
+; increase nudge goes from 7 to 0
+; means we were displaying lines 0-6 of maptop + 1 at the top
+; so we need to copy line 0 of maptop + 1 and then increase maptop.
+; or increase maptop and then copy line 0 of maptop.
+; at scroll 0, maptop is at the top, maptop+22 is at the bottom
+; at scroll 1, maptop is at the top, maptop+23 provides the new last line.
+
+; scrollmap will effect a vertical movement of the nonvisible screen.
+; locates new line and puts it in raster 0+offset, then calls copylines to do the scroll.
 ; enter with:
 ; - carry clear: move the map up (hero downward), increasing nudge
 ; - carry set: move the map down (hero upward), decreasing nudge
 
 scrollmap:  lda R_BANK          ; save bank
             sta SMBankSave      ; (but assume we are already in 1A00 ZP)
-            ror                 ; put carry in hi bit (the other 7 bits don't matter for anything)
+            ror                 ; put carry in hi bit (the other 7 bits unused)
             sta SMIncDec
             asl                 ; restore carry
             jsr gfxinit         ; set up pointers and switch banks (paintline needs it)
@@ -401,26 +409,28 @@ scrollmap:  lda R_BANK          ; save bank
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tax
             lda PgOneOff, x     ; scroll offset for nonvisible page 
-            bcs smdecn          ; branch away if we are decreasing nudge (carry still set/clear)
+            bcs smdec           ; branch away if we are decreasing nudge (carry still set/clear)
             ; we are increasing nudge (map scrolls upward)
-            sta SMNVal          ; use current (smaller) offset for copylines
+            sta SMNVal          ; use current (smaller) offset for copylines and paintline
+            ldy #23             ; in case we don't wrap, we'll see parts of 24 map lines
             adc #$01            ; carry is known to be clear, increase nudge
             and #$07
             bne smincnowr       ; nudge did not wrap
             ; nudge wrapped, so we're now looking at the next map tile line
+            dey                 ; in this case we only see 23 map lines
             inc PgOneTop, x
 smincnowr:  sta PgOneOff, x     ; store new scroll offset value for nonvisible page
-            lda PgOneTop, x
-            adc #21             ; carry is still known clear, new line to draw is in bottom row
+            tya                 ; number of lines we can see on the page
+            adc PgOneTop, x     ; carry is still known clear, new line to draw is in bottom row
             tax
             bcc smdraw          ; branch always
             ; we are decreasing nudge (map scrolls downward)
-smdecn:     bne smdecnowr       ; nudge will not wrap, top map line stays the same, proceed
+smdec:      bne smdecnowr       ; nudge will not wrap, top map line stays the same, proceed
             ; nudge will wrap, so we're now looking at the previous map tile line
             dec PgOneTop, x     ; move top of map up one line
             lda #$07
             sta PgOneOff, x     ; set offset to 7 in the new map line on nonvisible page
-            sta SMNVal          ; use new (smaller) offset for copylines
+            sta SMNVal          ; use new ("smaller") offset for copylines
             bne smdrawtop       ; branch always
             ; nudge will not wrap, so map line will not change
 smdecnowr:  dec PgOneOff, x
@@ -428,9 +438,9 @@ smdecnowr:  dec PgOneOff, x
             sta SMNVal          ; use new (smaller) offset for copylines
 smdrawtop:  lda PgOneTop, x
             tax
-smdraw:     jsr tilecache       ; cache the tiles for map line
+smdraw:     jsr tilecache       ; cache the tiles for map line in x
             ldy SMNVal          ; line of tile to draw
-            ldx #$00            ; draw to raster 0
+            ldx SMNVal          ; raster line to draw it on (0+offset)
             jsr paintline
             ; now shift all the lines (and copy in the buffered line 0)
 SMNVal = *+1
@@ -443,6 +453,21 @@ SMBankSave = *+1
             lda #INLINEVAR      ; restore the bank
             sta R_BANK
             rts
+
+; a
+; b
+; c
+; d
+; e
+; f
+; g
+; h
+; if we are increasing offset, we're coming from the top
+; from 0 to 1, we need to copy a (0 pre) from next 8 to the bottom line
+; from 1 to 2, we need to copy b (1 pre) from next 8 to the bottom line
+; if we are decreasing offset, we're coming from the bottom
+; from 1 to 0, we need to copy a (0 post) from prev 8 to the top line (a)
+; from 0 to 7, we need to copy h (7 post) from prev 8 to the top line (h)
 
 ; copylines rolls the whole screen (all lines below raster 7)
 ; raster line 0 is the new line that will be fed in at the appropriate edge
@@ -461,21 +486,23 @@ MemOffset:  .byte 0             ; $0 for first 8K of page, $20 for second 8K
 LineBuffer  =   $428            ; we are not using any text after line 1
 
 copylines:  lda #$00
-            ror                 ; move carry to hi bit
+            ror                 ; move carry to hi bit, clears carry
             sta ScrollDir       ; used for branching on direction later
             lda #$20            ; start with second half of graphics page (e.g., $4000-5FFF)
             sta MemOffset
+            sty CLYSave
 clhalfpage: lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             ror                 ; into carry
-            ror                 ; $80 for p2
-            ror                 ; $40 for p2, carry clear
-            adc YHiresHA, y     ; high byte of first line on nonvisible page A
+            ror                 ; $80 for p2, carry is clear
+            ror                 ; $40 for p2, carry is clear
+            adc YHiresH, y      ; high byte of first line on nonvisible page A
             adc MemOffset       ; be in either first $2000 or second $2000 of the page
             bit ScrollDir       ; will be negative if we are decreasing scroll
             bpl clinc           ; branch if increasing scroll, first target also in first $100
             ; decreasing scroll
+            ;           Generally, this moves memory from addr to addr+$80
             ;           save 2380-23CF (lines 38 and 78, discard line B8)
             ;           move 2300->2380 (30->38, 70->78, B0->B8)
             ; loop 1:   move 2280->2300 (28->30, 68->70, A8->B0)
@@ -483,36 +510,35 @@ clhalfpage: lda ShownPage
             ; loop 2:   move 2180->2200 (18->20, 58->60, 98->A0)
             ;           move 2100->2180 (10->18, 50->58, 90->98)
             ; loop 3:   move 2080->2100 (08->10, 48->50, 88->90)
-            ;           move 2000->2180 (00->08, 40->48, 80->88) (puts new line in place)
+            ;           move 2000->2180 (00->08, 40->48, 80->88) (will move in new line)
             ;           move saved line 38->40, saved line 78->80
-            sta SrcNewLn        ; line 0 address (first $100 of graphics)
             adc #$03            ; if decreasing, first target is in last $100, e.g. $2300
             sta R_ZP
             sta TargDecH
             ldx #$4F
 cldeclast:  lda $80, x          ; save lines $38/$78 for later (do not need $B8)
             sta LineBuffer, x
-            lda $00, x          ; move 2300->2380
+            lda $00, x          ; move 2300->2380 (lines $30->$38, $70->$78)
             sta $80, x
             dex
             bpl cldeclast
-            ldx #$27            ; move line $B0 to $B8 (finish prior triplet)
+            ldx #$27            ; move line $B0 to $B8 (finish 2300->2380)
 cldeclastb: lda $50, x
             sta $D0, x
             dex
             bpl cldeclastb
-            dec R_ZP            ; first pass, TargDecH now $23, R_ZP is $22
-            ldy #$03
+            dec R_ZP            ; e.g., TargDecH now $23, R_ZP is $22
+            ldy #$03            ; loop three times through
 cldecg:     ldx #$77
-cldecl:     lda $80, x          ; e.g., 2280->2300
+cldecl:     lda $80, x          ; e.g., 2280->2300 (lines $28->$30, $68->$70, $A8->$B0)
 TargDecH = *+2
             sta $2300, x        ; INLINEADDR
-            lda $00, x          ; e.g., 2200->2280
+            lda $00, x          ; e.g., 2200->2280 (lines $20->$28, $60->$68, $A0->$A8)
             sta $80, x
             dex
             bpl cldecl
             dey
-            beq cldecdone       ; we've done all three, leave with ZP still at $20
+            beq cldecdone       ; done all three, leave with ZP still at, e.g., $20
             dec TargDecH
             dec R_ZP
             bne cldecg          ; branch always
@@ -523,6 +549,7 @@ cldecrest:  lda LineBuffer, x   ; move lines $38/$78 to $40/$80
             bpl cldecrest
             bmi clpgdone          ; branch always
             ; increasing scroll 
+            ;           Generally, this moves memory from addr+$80 to addr
             ;           save 2028-234F (lines 40 and 80)
             ;           move 20A8->2028 (48->40, 88->80, discard 08)
             ; loop 1:   move 2100->2080 (10->08, 50->48, 90->88)
@@ -533,7 +560,8 @@ cldecrest:  lda LineBuffer, x   ; move lines $38/$78 to $40/$80
             ;           move 2380->2300 (38->30, 78->70, B8->B0)
             ;           move saved line 40->38, saved line 80->78
             ;           move new line 00->B8
-clinc:      sta R_ZP
+clinc:      sta SrcNewLn        ; line 0 address hi byte (e.g., $20, $40, $60, $80)
+            sta R_ZP
             sta TargIncH
             ldx #$4F            
 clinczero:  lda $28, x
@@ -542,37 +570,37 @@ clinczero:  lda $28, x
             sta $28, x
             dex
             bpl clinczero
-            inc R_ZP            ; first pass through, TargIncH is now $20, R_ZP is $21            
+            inc R_ZP            ; first pass through, TargIncH is now $20, R_ZP is $21
             ldy #$03            ; move this many blocks of $77+$77 (sextuplets of lines)
 clincg:     ldx #$77
-clincl:     lda $00, x          ; e.g. 2100->2080
+clincl:     lda $00, x          ; e.g. 2100->2080 ($10->$08, $50->$48, $90->$88)
 TargIncH = *+2
             sta $2080, x        ; INLINEADDR 
-            lda $80, x          ; e.g. 2180->2100
+            lda $80, x          ; e.g. 2180->2100 ($18->$10, $58->$50, $98->$90)
             sta $00, x
             dex
             bpl clincl
             dey
-            beq clincdone       ; we've done all three, leave with ZP still at $23
+            beq clincdone       ; done all three, leave with ZP still at, e.g., $23
             inc TargIncH
             inc R_ZP
             bne clincg          ; branch always
-            ; move lines $40 and $80, saved earlier, to $38 and $78.
 clincdone:  ldx #$4F
-clincrest:  lda LineBuffer, x
+clincrest:  lda LineBuffer, x   ; move lines $40/$80 to $38/$78
             sta $80, x
             dex
-            bpl clincrest
-            ; copy line 0 to B8
+            bpl clincrest            
             ldx #$27
 SrcNewLn = *+2
-clincnew:   lda $2000, x
+clincnew:   lda $2000, x        ; copy line 0 to B8
             sta $D0, x
             dex
             bpl clincnew
             ; above covers one of the two graphics areas per page, now need
             ; to go get the other one, $2000 above the first one.
-clpgdone:   lda MemOffset
+CLYSave = *+1
+clpgdone:   ldy #INLINEVAR
+            lda MemOffset
             beq cldone          ; branch if we just finished both halves of the page
             lda #$00            ; second half finished, go back to do the first half
             sta MemOffset
