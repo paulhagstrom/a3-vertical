@@ -27,7 +27,8 @@ CodeStart:  jmp gameinit
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
-PlayerX:    .byte   0                       ; X-coordinate of player on the map.
+PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
+PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
 PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
@@ -244,14 +245,15 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PgOneTop        ; top map row - page 1
             sta PgTwoTop        ; top map row - page 2
             lda #$09            ; start player kind of in the middle
-            sta PlayerX         ; this is the X coordinate of the player on the map (0-13)
+            sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
             lda #$FC            ; Start down near the bottom
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
-            sta PlayerYOff      ; this is the Y offset of the player from the top of the tile
+            sta PlayerYOff      ; this is the Y offset (0-7) of the player from the top of the tile
+            sta PlayerXOff      ; this is the X offset (0-7) of the player from the left of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta VelocityX       ; player X velocity, can be negative, zero, or positive

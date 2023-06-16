@@ -70,6 +70,8 @@ bgtile:     tya
             sta (ZPtrA), y
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
+            ; tiles done, now do sprites
+            
             rts
             
 ; convert 4 bytes of sensibly encoded pixels into
@@ -234,6 +236,7 @@ MapTiles:
 ; These have both a 1-bit mask and a pixel array
 ; Mask is the lower 7 bits of the mask byte
 
+Sprites:
 ; Player - TODO - later have it bank depending on XV, so have 3 orientations
             .byte   %00001000
             .byte   %00011100

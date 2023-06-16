@@ -26,9 +26,71 @@
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
 
+; PgOneTop - map tile line visible in the top line of the screen
+; sprite Y - map tile line contining the first line of the sprite
+; PgOneOff - scroll value of the page
+; sprite Y off - lines into the tile we start drawing the sprite
+; So the math is a little bit complicated, even if PgOneTop and sprite Y
+; match, the top of the sprite might not be on the screen, if PgOneOff is
+; more than sprite Y off.
+; raster line of the top of the sprite is:
+; 8 + (sprite Y - PgOneTop)*8 + (sprite Y off - PgOneOff)
+; sprite extends to that + 7
+; 
+; YOU ARE HERE - 
+; Was trying to set this up so the logs could float around in some
+; stable place on the map.  But for getting sprites to work, it might
+; be simpler to just have a sprite at an absolute screen coordinate,
+; and just work out the raster line and allow it to move within the
+; screen bounds, with the background just a kind of decoration.
+; once that is work, I could try to check collistions with the map
+; and anchor things to map coordinates?
+
+; find raster line of sprite
+; come in with A = map Y coordinate, Y = offset
+
+sprraster:  sec                 ; A has map tile coordinate on entry
+            sbc PgOneTop, x
+            bcs sprrb
+            ; map tile coordinate is above the screen top
+            cmp #<-1
+            bcc sproff
+            ; map tile coordinate is just above the top, maybe partly on screen
+            ; TODO - do something rational here
+sprrb:
+            asl
+            asl
+            asl                 ; x8
+            sta ZSpriteOff      ; save for later adding
+            tya                 ; offset comes in in Y
+            sec
+            sbc PgOneOff, x
+            ; 
+            adc ZSpriteOff
+            adc #$08
+            rts
+sproff:     ; sprite is off screen
+            rts
+
 ; draw sprites on nonvisible page
 
+PgIndex:    .byte 0             ; 0 if drawing on page 1, 1 if drawing on page 2
+
 setsprites:
+            lda ShownPage       
+            eor #$01            ; switch focus to nonvisible page
+            and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
+            tax
+            stx PgIndex
+            
+            ; draw player sprite
+            ; player is on the map at PlayerX, PlayerY,
+            ; offset by PlayerXOff, PlayerYOff
+            
+            lda PlayerY
+            ldy PlayerYOff
+            ;jsr sprraster
+            
             rts
 
 ; erase sprites on nonvisible page

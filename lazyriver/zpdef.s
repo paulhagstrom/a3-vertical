@@ -37,6 +37,8 @@ ZLogAnim    = $3C   ; pointer to log current frame data
 ZLogPeriod  = $3E   ; pointer to log tick period data
 ZLogSp      = $40   ; pointer to log speed, maybe redundant. Ticks per move.
 
+ZSpriteOff  = $4C   ; used in sprites, difference between sprite and page offset
+
 ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collision
 ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
 ZFrame      = $4F   ; temporary storage for current animation frame
