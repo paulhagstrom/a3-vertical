@@ -85,8 +85,17 @@ ZPixByteF   = $DB
 ZPixByteG   = $DC
 ZPixByteH   = $DD
 
+ZPixByteI   = $DE
+ZPixByteJ   = $DF
+ZPixByteK   = $E0
+ZPixByteL   = $E1
+ZPixByteM   = $E2
+ZPixByteN   = $E3
+ZPixByteO   = $E4
+ZPixByteP   = $E5
+
 ; hires update during movement processing
-ZDirtStack  = $E2   ; pointer to dirty column group stack pointers - E2 E3 E4 E5 E6 E7 E8 E9 EA
+ZDirtStack  = $E6   ; pointer to dirty column group stack pointers - E2 E3 E4 E5 E6 E7 E8 E9 EA
 
 ; Addresses are used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,

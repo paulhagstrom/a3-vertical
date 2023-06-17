@@ -102,42 +102,87 @@ bgtile:     tya
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
             ; tiles done, now do sprites
+            
+            rts
+            
+            ; YOU ARE HERE
+            ; the plan is to take the sprite bytes and
+            ; slide them across a two-byte range, using xlatequad to populate
+            ; preshifted sprites with c__ as background
+            ; also make masks where bit is 1 if a color is something other than c__
+            ; once this translation is done, the actual sprite drawing/erasing
+            ; will probably be pretty easy
+            ; to begin we will just have 1 sprite (player)
+            ; might be interesting to try having a hole in the sprite to
+            ; see through it.
+            
             lda #$15            ; start sprite data at $1500
             sta ZPtrA + 1
             ldy #$00
 bgsprite:   tya
             pha                 ; stash start index of sprite line
-            ldx #$00            ; preshift offset
+            lda #(c__*16 + c__) ; two transparent pixels
+            ldx #$03            ; make second 7 transparent
+bgsprfill:  sta ZPixByteM, x
+            dex
+            bpl bgsprfill
+            ldx #$03            ; move sprite into first 4
+bgspradd:   lda Sprites, y
+            sta ZPixByteI, x
+            dex
+            bpl bgspradd
+            ldx #$03            ; translate first 4
+bgspra:     lda ZPixByteI, x
+            sta ZPixByteA, x
+            dex
+            bpl bgspra
+            jsr xlatequad
+            ldx #$03
+bgsprouta:  lda ZPixByteE, x
+            sta (ZPtrA), y
+            dex
+            iny
+            bpl bgsprouta
+            ldx #$03            ; translate second 4
+bgsprb:     lda ZPixByteI, x
+            sta ZPixByteA, x
+            dex
+            bpl bgsprb
+            jsr xlatequad
+            ldx #$03
+bgsproutb:  lda ZPixByteE, x
+            sta (ZPtrA), y
+            dex
+            iny
+            bpl bgsproutb
+            ; TODO - build mask with 1 unless color nibble is c__
             
-            ; store definition line in ZPixByteA-ZpixByteD
-            lda Sprites, y
-            sta ZPixByteA
-            iny
-            lda Sprites, y
-            sta ZPixByteB
-            iny
-            lda Sprites, y
-            sta ZPixByteC
-            iny
-            lda Sprites, y
-            sta ZPixByteD
-            jsr xlatequad       ; translate into ZPixByteE-ZPixByteH
-            pla                 ; restore start index of tile line
+            ; shift all the pixels to the right
+            ; TODO unless we are already done
+            lda #$00
+            sta ZPxScratch
+            ldx #$06
+bgsprshft:  lda ZPixByteI, x
             tay
-            lda ZPixByteE
-            sta (ZPtrA), y
-            iny
-            lda ZPixByteF
-            sta (ZPtrA), y
-            iny
-            lda ZPixByteG
-            sta (ZPtrA), y
-            iny
-            lda ZPixByteH
-            sta (ZPtrA), y
-            iny                 ; move to next tile line
-            bne bgsprite        ; assumes exactly 8 tiles
+            and #$0F
+            asl
+            asl
+            asl
+            asl
+            ora ZPxScratch
+            sta ZPixByteJ, x
+            tya
+            and #$F0
+            lsr
+            lsr
+            lsr
+            lsr
+            sta ZPxScratch
+            dex
+            bpl bgsprshft
             
+            ;inc ZPtrA + 1       ; shifted variants are on increasing pages
+
             rts
             
 ; convert 4 bytes of sensibly encoded pixels into
