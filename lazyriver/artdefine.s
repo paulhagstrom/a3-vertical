@@ -8,27 +8,40 @@
 ; Map tile graphics: $1400-14FF (8 tile types)
 ; Each map tile is 7x8 = 32 bytes.
 ; 8 map tiles = $100 bytes, so should end at $14FF.
-; Sprite graphics will start at $1500, and work like this:
-;   $1500 - sprite 1 shift 0
-;       $1540 - sprite 2 shift 0
-;       $1580 - sprite 3 shift 0
-;       $15C0 - sprite 4 shift 0
-;   $1600 - sprite 1 shift 1
-;   ...
-;   $1B00 - sprite 1 shift 6
-;   $1900 - sprite 1 mask shift 0
-;   ...
-;   $2200 - sprite 1 mask shift 7
-; so, we get four sprites in from $1500-22FF.
-; or, $E00 per 4 sprites.
-; we can put sprites 5-8 at $2300-31FF
-; and we can keep going.
-; 1-4 $1500, 5-8 $2300, 9-12 $3100,
-; 13-16 $3F00, 17-20 $4D00, 21-24 $5B00, 25-28 $6900 (ends at $77FF)
-; We can fit 28 sprites this way.
-; another option is to use 1-4 as animation variants
-; with 4 frames per sprite, we can get 7 sprites.
-; with 2 frames per sprite, we can get 14 sprites.
+; each sprite is 64 bytes of data (2 tiles wide) and 64 bytes of mask
+; allowing for 30 sprites between $1500-$7EFF
+; optimizing for drawing, mask and data will be interleaved, like:
+; $1500 - sprite 1 shift 0 line 1 first half mask
+; $1504 - sprite 1 shift 0 line 1 first half data
+; $1508 - sprite 1 shift 0 line 1 second half mask
+; $150C - sprite 1 shift 0 line 1 second half data
+; $1510 - sprite 1 shift 0 line 2 first half mask
+; $1514 - sprite 1 shift 0 line 2 first half data
+; ...
+; $1578 - sprite 1 shift 0 line 8 second half mask
+; $157C - sprite 1 shift 0 line 8 second half data
+; $1580 - sprite 2 shift 0 line 1 first half mask
+; ...
+; $15F8 - sprite 2 shift 0 line 8 second half data
+; $1600 - sprite 1 shift 1 line 1 first half mask
+; ...
+; $16F8 - sprite 2 shift 1 line 8 second half data
+; $1700 - sprite 1 shift 2 line 1 first half mask
+; ...
+; $1BF8 - sprite 2 shift 6 line 8 second half data
+; $1C00 - sprite 3 shift 0 line 1 first half mask
+; ...
+; $22F8 - sprite 4 shift 6 line 8 second half data
+; that is:
+; sprite 1 is in first $80, sprite 2 is in second $80 of a page
+; masks and data interleaved, 8 lines, 8 bytes across, interleaves every 4 bytes
+; shift increase base address by $100
+; full 7 shifts of 2 sprites fit in $700 bytes ($1500...$1C00)
+; odd sprites start at pages:
+; $15, $1C, $23, $2A, $31, $38, $3F, $46, $4D, $54, $5B, $62, $69, $70, $77
+; we have room for 30 sprites, should we wish to use them.
+; or 15 sprites with two animation variants
+; or 10 sprites with three animation variants
 
 ; tile names
 
@@ -61,9 +74,6 @@ C_WATER_D   = $07         ; water type 4
 ; 0001 1 magenta    0101 5 grey1        1001 9 orange   1101 D yellow
 ; 0010 2 darkblue   0110 6 medblue      1010 A grey2    1110 E aqua
 ; 0011 3 purple     0111 7 lightblue    1011 B pink     1111 F white
-
-; TODO: plan here is to convert tile colors to proper 4-byte segments
-; TODO: then, convert objects to pre-shifted 4-byte segments with masks
 
 buildgfx:   lda #$82            ; bank 2
             sta ZPtrA + XByte
@@ -102,63 +112,101 @@ bgtile:     tya
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
             ; tiles done, now do sprites
-            
-            rts
-            
-            ; YOU ARE HERE
-            ; the plan is to take the sprite bytes and
-            ; slide them across a two-byte range, using xlatequad to populate
-            ; preshifted sprites with c__ as background
-            ; also make masks where bit is 1 if a color is something other than c__
-            ; once this translation is done, the actual sprite drawing/erasing
-            ; will probably be pretty easy
-            ; to begin we will just have 1 sprite (player)
-            ; might be interesting to try having a hole in the sprite to
-            ; see through it.
-            
             lda #$15            ; start sprite data at $1500
             sta ZPtrA + 1
-            ldy #$00
-bgsprite:   tya
-            pha                 ; stash start index of sprite line
-            lda #(c__*16 + c__) ; two transparent pixels
+            lda #$00
+            sta ZPtrA
+            lda #NumSprites     ; number of sprites to transform
+            sta ZSprLeft
+            lda #>Sprites
+            sta CurrSprLn + 1
+            lda #<Sprites
+            sta CurrSprLn
+bgsprites:  lda #$08
+            sta ZSprLnsLeft
+            ; fill two-tile-wide line with sprite + 7 transparent pixels
+bgsprite:   lda #(c__*16 + c__) ; two transparent pixels
             ldx #$03            ; make second 7 transparent
 bgsprfill:  sta ZPixByteM, x
             dex
             bpl bgsprfill
-            ldx #$03            ; move sprite into first 4
-bgspradd:   lda Sprites, y
-            sta ZPixByteI, x
-            dex
+            ldy #$03            ; move sprite into first 4
+CurrSprLn = *+1
+bgspradd:   lda INLINEADDR, y
+            sta ZPixByteI, y
+            dey
             bpl bgspradd
-            ldx #$03            ; translate first 4
-bgspra:     lda ZPixByteI, x
-            sta ZPixByteA, x
-            dex
+            lda #$06
+            sta ZShiftsLeft
+bgsprline:  ldy #$03            ; build mask for first half
+bgmaska:    lda ZPixByteI, y
+            jsr tomask
+            sta ZPixByteA, y
+            dey
+            bpl bgmaska
+            jsr xlatequad
+            ldy #$03
+bgmaskouta: lda ZPixByteE, y    ; write sprite mask data first half
+            sta (ZPtrA), y
+            dey
+            bpl bgmaskouta
+            lda ZPtrA           ; advance data pointer
+            clc 
+            adc #$04
+            sta ZPtrA
+            ldy #$03            ; translate data for first half
+bgspra:     lda ZPixByteI, y
+            sta ZPixByteA, y
+            dey
             bpl bgspra
             jsr xlatequad
-            ldx #$03
-bgsprouta:  lda ZPixByteE, x
+            ldy #$03
+bgsprouta:  lda ZPixByteE, y    ; write sprite data first half
             sta (ZPtrA), y
-            dex
-            iny
+            dey
             bpl bgsprouta
-            ldx #$03            ; translate second 4
-bgsprb:     lda ZPixByteI, x
-            sta ZPixByteA, x
-            dex
+            lda ZPtrA           ; advance data pointer
+            clc 
+            adc #$04
+            sta ZPtrA
+            ldy #$03            ; build mask for second half
+bgmaskb:    lda ZPixByteM, y
+            jsr tomask
+            sta ZPixByteA, y
+            dey
+            bpl bgmaskb
+            jsr xlatequad
+            ldy #$03
+bgmaskoutb: lda ZPixByteE, y    ; write sprite mask data second half
+            sta (ZPtrA), y
+            dey
+            bpl bgmaskoutb
+            lda ZPtrA           ; advance data pointer
+            clc 
+            adc #$04
+            sta ZPtrA
+            ldy #$03            ; translate data for second half
+bgsprb:     lda ZPixByteM, y
+            sta ZPixByteA, y
+            dey
             bpl bgsprb
             jsr xlatequad
-            ldx #$03
-bgsproutb:  lda ZPixByteE, x
+            ldy #$03
+bgsproutb:  lda ZPixByteE, y    ; write sprite data second half
             sta (ZPtrA), y
-            dex
-            iny
+            dey
             bpl bgsproutb
-            ; TODO - build mask with 1 unless color nibble is c__
-            
+            ; mask and data now transferred for one line
+            dec ZShiftsLeft
+            beq bgsprldone      ; branch if all shifts done
+            ; advance data pointer to next shift, this sprite, this line
+            ; back up $0C and move to next page/shift
+            lda ZPtrA
+            sec
+            sbc #$0C
+            sta ZPtrA
+            inc ZPtrA + 1
             ; shift all the pixels to the right
-            ; TODO unless we are already done
             lda #$00
             sta ZPxScratch
             ldx #$06
@@ -180,9 +228,68 @@ bgsprshft:  lda ZPixByteI, x
             sta ZPxScratch
             dex
             bpl bgsprshft
-            
-            ;inc ZPtrA + 1       ; shifted variants are on increasing pages
+            lda #(c__ * 16)     ; shift in a transparent pixel on the left
+            ora ZPxScratch
+            sta ZPixByteI
+            jmp bgsprline
+            ; we have done all shifts and masks for this sprite, one line
+            ; now, move to the next line if there are more lines
+bgsprldone: dec ZSprLnsLeft
+            beq bgsprdone
+            ; ZPtr is 4 from the end of the sprite line data block
+            ; next line is 6 pages back, but 4 bytes ahead
+            lda ZPtrA + 1       ; back up $600 (e.g., from $1B to $15)
+            sec
+            sbc #$06
+            sta ZPtrA + 1
+            lda ZPtrA
+            clc
+            adc #$04
+            sta ZPtrA
+            lda CurrSprLn       ; move pointer into sprite definition ahead
+            clc
+            adc #$04
+            bcc :+
+            inc CurrSprLn + 1
+:           jmp bgsprite
+            ; we have done all lines for this sprite
+            ; now, if there are more sprites, do the next one
+bgsprdone:  dec ZSprLeft
+            beq bgalldone
+            ; move to the next sprite
+            ; ZPtr is 4 from the end of the sprite data block
+            ; next sprite is either 4 ahead, $600 back, or just 4 ahead
+            lda ZPtrA
+            clc
+            adc #$04
+            sta ZPtrA
+            bpl :+              ; branch if we just did an even sprite
+            lda ZPtrA + 1       ; back up $600, we just did an odd sprite
+            sec
+            sbc #$06
+            sta ZPtrA + 1
+:           jmp bgsprites
+bgalldone:  rts
 
+; convert a sensibly-encoded byte into a mask
+; color c__ -> 1111, others -> 0000
+
+tomask:     pha
+            and #$F0
+            cmp #(c__ * 16)
+            beq :+
+            lda #$00
+            beq :++
+:           lda #$F0
+:           sta ZPxScratch
+            pla
+            and #$0F
+            cmp #c__
+            beq :+
+            lda #$00
+            beq :++
+:           lda #$0F
+:           ora ZPxScratch
             rts
             
 ; convert 4 bytes of sensibly encoded pixels into
@@ -370,6 +477,9 @@ MapTiles:
 
 ; Sprite graphics
 ; Anything that is in the mask color (Grey2, c__) will be transparent.
+; each sprite definition is 32 ($20) bytes
+
+NumSprites = 1
 
 Sprites:
 ; Player - TODO - later have it bank depending on XV, so have 3 orientations
