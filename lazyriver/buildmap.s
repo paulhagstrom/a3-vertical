@@ -6,7 +6,7 @@
 ; (since it starts wide and will probably get narrow further on)
 
 ; Map data and element tracking variables are in bank 2
-; Map data lives from $2000-3400.
+; Map data lives from $0000-1400.
 ; Element tracking variables are from $300-AFF.
 
 ; Each byte represents a 7x8 tile (screen tiles 20x24)
@@ -26,7 +26,7 @@ MapLine:    .byte 0         ; current map line being built
 
 buildmap:   
             ; fill in the map start address lookup table
-            ldx #$20        ; high byte of map address
+            ldx #$00        ; high byte of map address
             ldy #$00        ; line of map we are on
             tya             ; coincidentally, low byte of map address
 bmidxmap:   sta MapLineL, y

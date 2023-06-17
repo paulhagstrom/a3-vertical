@@ -18,7 +18,7 @@
 ; sprite line 7 - display line C - adjusted line E
 ;
 ; That is, to draw on display line y, we draw to
-; int(y/8) + (y+offset)%7
+; int(y/8) + (y+offset)%8
 ;
 ; To draw the sprite itself, we need to compute the targets and then move
 ; the data.  The data is 64 bytes, and we want to load the background, stash
@@ -26,25 +26,34 @@
 ; in the ballpark of 1280 cycles per sprite, probably will be somewhat
 ; more.
 
-; PgOneTop - map tile line visible in the top line of the screen
-; sprite Y - map tile line contining the first line of the sprite
-; PgOneOff - scroll value of the page
-; sprite Y off - lines into the tile we start drawing the sprite
-; So the math is a little bit complicated, even if PgOneTop and sprite Y
-; match, the top of the sprite might not be on the screen, if PgOneOff is
-; more than sprite Y off.
-; raster line of the top of the sprite is:
-; 8 + (sprite Y - PgOneTop)*8 + (sprite Y off - PgOneOff)
-; sprite extends to that + 7
-; 
-; YOU ARE HERE - 
-; Was trying to set this up so the logs could float around in some
-; stable place on the map.  But for getting sprites to work, it might
-; be simpler to just have a sprite at an absolute screen coordinate,
-; and just work out the raster line and allow it to move within the
-; screen bounds, with the background just a kind of decoration.
-; once that is work, I could try to check collistions with the map
-; and anchor things to map coordinates?
+; when we draw a sprite, we will have its raster y-coordinate
+; and an x-coordinate (0-133, it can't go off the right edge)
+; we iterate line from 0 to 7 for the 8 lines of the sprite
+; meaning we are aiming to draw on raster y+line
+; int((y+line)/8) + (y+line+offset)%8
+; horizontally, we use two tile-widths to hold the sprite
+; we draw at 0-1 if sprite starts between 0 and 6
+; we draw at 1-2 if sprite starts between 7 and 13, etc.
+; we have seven versions of those two bytes, with the sprite
+; starting at each possible position (e.g., between 0 and 6)
+; the last one is 19-20 if sprite starts between 127 and 133.
+
+; TODO - later, try to anchor the sprite to the map, but for
+; now just put it on the screen in screen coordinates.
+
+; when we draw a sprite, we need to retrieve the background
+; and store it somewhere (64 bytes), AND it with the mask,
+; OR it with the graphics and store it on the page.
+; and to erase, store the cached background back to the page.
+; so we need 64 bytes per visible sprite for background cache.
+; we can use $428-7FF and $828-BFF (text pages)
+; 440 480 4C0 500 540 580 5C0 600 640 680 6C0 700 740 780 7C0
+; so that is 15 active sprites per text page, we can do 30
+; relatively easily.  Probably having that many will take too
+; long to draw though.
+; but, yes, cache background for sprite n in:
+; $440 + (n * $40), up to an n of 15.
+; or up to an n of 30 if we just ensure there is no n=16.
 
 ; find raster line of sprite
 ; come in with A = map Y coordinate, Y = offset

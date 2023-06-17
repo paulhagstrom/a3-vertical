@@ -165,7 +165,7 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
 gfxinit:    lda #$82            ; map is bank 2
             sta ZMapPtr + XByte
             sta ZPtrA + XByte
-            lda #$34            ; tile graphics start at $3400
+            lda #$14            ; tile graphics start at $1400
             sta ZPtrA + 1
             lda #$00
             sta ZPtrA           ; tile graphics low byte
