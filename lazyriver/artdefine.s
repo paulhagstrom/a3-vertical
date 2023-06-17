@@ -77,7 +77,12 @@ C_WATER_D   = $07         ; water type 4
 
 buildgfx:   lda #$82            ; bank 2
             sta ZPtrA + XByte
-            lda #$14            ; start map tiles at $1400
+            jsr buildtiles      ; transform the tile graphics
+            jsr buildsprs       ; transform the sprite graphics
+            rts
+
+; build the tile graphics
+buildtiles: lda #$14            ; start map tiles at $1400
             sta ZPtrA + 1
             ldy #$00
             sty ZPtrA
@@ -111,8 +116,10 @@ bgtile:     tya
             sta (ZPtrA), y
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
-            ; tiles done, now do sprites
-            lda #$15            ; start sprite data at $1500
+            rts
+
+; transform the sprite graphics            
+buildsprs:  lda #$15            ; start sprite data at $1500
             sta ZPtrA + 1
             lda #$00
             sta ZPtrA
@@ -124,21 +131,127 @@ bgtile:     tya
             sta CurrSprLn
 bgsprites:  lda #$08
             sta ZSprLnsLeft
+bgsprite:   jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
+            lda #$07            ; then do 7 shifts
+            sta ZShiftsLeft
+bgsprline:  jsr bgdoshift       ; write masks/data for this sprite line, this shift
+            dec ZShiftsLeft
+            beq bgsprldone      ; branch if all shifts done
+            ; advance data pointer to next shift, this sprite, this line
+            ; (back $10, ahead $100)
+            lda ZPtrA
+            sec
+            sbc #$10
+            sta ZPtrA
+            inc ZPtrA + 1
+            jsr bgshift         ; shift pixels in the workspace to the right
+            jmp bgsprline
+            ; we have done all shifts and masks for this sprite, one line
+            ; now, move to the next line if there are more lines
+bgsprldone: lda CurrSprLn       ; move pointer into sprite definition ahead
+            clc
+            adc #$04
+            bcc :+
+            inc CurrSprLn + 1
+ :          dec ZSprLnsLeft
+            beq bgsprdone       ; branch away if all lines are done
+            ; ZPtr is just beyond the end of the sprite line data block
+            ; next line is 6 pages back
+            lda ZPtrA + 1       ; back up $600 (e.g., from $1B to $15)
+            sec
+            sbc #$06
+            sta ZPtrA + 1
+            jmp bgsprite
+            ; we have done all lines for this sprite
+            ; now, if there are more sprites, do the next one
+bgsprdone:  dec ZSprLeft
+            beq bgalldone
+            ; move to the next sprite
+            ; ZPtr is just beyond the end of the sprite data block
+            ; next sprite is either $700 back (e.g., $1580) or here (e.g. $1C00)
+            lda ZPtrA
+            bmi :+              ; branch if we just did an odd sprite
+            lda ZPtrA + 1       ; back up $700, we just did an even sprite
+            sec
+            sbc #$07
+            sta ZPtrA + 1
+            jmp bgsprite        ; go do this next sprite
+            
+:           jmp bgsprites
+bgalldone:  rts
+
+; shift all pixels in the 2-tile buffer to the right
+; AB CD EF G- HI JK LM N- => 
+; _A BC DE F- GH IJ KL M-
+; 00 01 02 03 04 05 06 07 index
+bgshift:    lda #$00
+            sta ZPxScratch
+            ldx #$06            ; last pixel does not survive
+bgshiftb:   lda ZPixByteI, x
+            tay
+            and #$0F            ; second pixel
+            asl
+            asl
+            asl
+            asl
+            ora ZPxScratch
+            sta ZPixByteJ, x
+            tya
+            and #$F0            ; first pixel
+            lsr
+            lsr
+            lsr
+            lsr
+            sta ZPxScratch      ; becomes second pixel here
+            dex
+            beq bgshiftd
+            cpx #$03            ; at the juncture, special case
+            beq bgshiftc
+            bne bgshiftb        ; branch always
+bgshiftc:   lda ZPixByteI, x    ; load lone pixel of first tile
+            and #$F0
+            ora ZPxScratch
+            sta ZPixByteJ, x
+            lda #$00
+            sta ZPxScratch
+            dex
+            bne bgshiftb        ; branch always
+bgshiftd:   lda #(c__ * 16)     ; shift in a transparent pixel on the left
+            ora ZPxScratch
+            sta ZPixByteI
+            rts
+            
+; fill workspace for shift 0 of current sprite line
+; assumes:
+; - CurrSprLn points to current line in the sprite definition
             ; fill two-tile-wide line with sprite + 7 transparent pixels
-bgsprite:   lda #(c__*16 + c__) ; two transparent pixels
-            ldx #$03            ; make second 7 transparent
+bgspreadln: lda #(c__*16 + c__) ; two transparent pixels
+            ldx #$03            ; make second 7 pixels transparent
 bgsprfill:  sta ZPixByteM, x
             dex
             bpl bgsprfill
-            ldy #$03            ; move sprite into first 4
+            ldy #$03            ; move sprite into first 7 pixels
 CurrSprLn = *+1
 bgspradd:   lda INLINEADDR, y
             sta ZPixByteI, y
             dey
             bpl bgspradd
-            lda #$06
-            sta ZShiftsLeft
-bgsprline:  ldy #$03            ; build mask for first half
+            rts
+
+; advance the data pointer to next group of 7
+bgadvance:  lda ZPtrA
+            clc
+            adc #$04
+            sta ZPtrA
+            rts
+
+; work on current shift
+; assumes:
+; - ZPixByteI-P hold current (shifted) pixels
+; - ZPtrA points to storage location for this sprite masks/data
+; ends with ZPtrA advanced by $10 (mask, data, mask, data)
+
+bgdoshift:  ldy #$03            ; build mask for first half
 bgmaska:    lda ZPixByteI, y
             jsr tomask
             sta ZPixByteA, y
@@ -150,10 +263,7 @@ bgmaskouta: lda ZPixByteE, y    ; write sprite mask data first half
             sta (ZPtrA), y
             dey
             bpl bgmaskouta
-            lda ZPtrA           ; advance data pointer
-            clc 
-            adc #$04
-            sta ZPtrA
+            jsr bgadvance       ; advance data pointer
             ldy #$03            ; translate data for first half
 bgspra:     lda ZPixByteI, y
             sta ZPixByteA, y
@@ -165,10 +275,7 @@ bgsprouta:  lda ZPixByteE, y    ; write sprite data first half
             sta (ZPtrA), y
             dey
             bpl bgsprouta
-            lda ZPtrA           ; advance data pointer
-            clc 
-            adc #$04
-            sta ZPtrA
+            jsr bgadvance       ; advance data pointer
             ldy #$03            ; build mask for second half
 bgmaskb:    lda ZPixByteM, y
             jsr tomask
@@ -181,10 +288,7 @@ bgmaskoutb: lda ZPixByteE, y    ; write sprite mask data second half
             sta (ZPtrA), y
             dey
             bpl bgmaskoutb
-            lda ZPtrA           ; advance data pointer
-            clc 
-            adc #$04
-            sta ZPtrA
+            jsr bgadvance       ; advance data pointer
             ldy #$03            ; translate data for second half
 bgsprb:     lda ZPixByteM, y
             sta ZPixByteA, y
@@ -197,79 +301,7 @@ bgsproutb:  lda ZPixByteE, y    ; write sprite data second half
             dey
             bpl bgsproutb
             ; mask and data now transferred for one line
-            dec ZShiftsLeft
-            beq bgsprldone      ; branch if all shifts done
-            ; advance data pointer to next shift, this sprite, this line
-            ; back up $0C and move to next page/shift
-            lda ZPtrA
-            sec
-            sbc #$0C
-            sta ZPtrA
-            inc ZPtrA + 1
-            ; shift all the pixels to the right
-            lda #$00
-            sta ZPxScratch
-            ldx #$06
-bgsprshft:  lda ZPixByteI, x
-            tay
-            and #$0F
-            asl
-            asl
-            asl
-            asl
-            ora ZPxScratch
-            sta ZPixByteJ, x
-            tya
-            and #$F0
-            lsr
-            lsr
-            lsr
-            lsr
-            sta ZPxScratch
-            dex
-            bpl bgsprshft
-            lda #(c__ * 16)     ; shift in a transparent pixel on the left
-            ora ZPxScratch
-            sta ZPixByteI
-            jmp bgsprline
-            ; we have done all shifts and masks for this sprite, one line
-            ; now, move to the next line if there are more lines
-bgsprldone: dec ZSprLnsLeft
-            beq bgsprdone
-            ; ZPtr is 4 from the end of the sprite line data block
-            ; next line is 6 pages back, but 4 bytes ahead
-            lda ZPtrA + 1       ; back up $600 (e.g., from $1B to $15)
-            sec
-            sbc #$06
-            sta ZPtrA + 1
-            lda ZPtrA
-            clc
-            adc #$04
-            sta ZPtrA
-            lda CurrSprLn       ; move pointer into sprite definition ahead
-            clc
-            adc #$04
-            bcc :+
-            inc CurrSprLn + 1
-:           jmp bgsprite
-            ; we have done all lines for this sprite
-            ; now, if there are more sprites, do the next one
-bgsprdone:  dec ZSprLeft
-            beq bgalldone
-            ; move to the next sprite
-            ; ZPtr is 4 from the end of the sprite data block
-            ; next sprite is either 4 ahead, $600 back, or just 4 ahead
-            lda ZPtrA
-            clc
-            adc #$04
-            sta ZPtrA
-            bpl :+              ; branch if we just did an even sprite
-            lda ZPtrA + 1       ; back up $600, we just did an odd sprite
-            sec
-            sbc #$06
-            sta ZPtrA + 1
-:           jmp bgsprites
-bgalldone:  rts
+            jmp bgadvance       ; leave by advancing data pointer
 
 ; convert a sensibly-encoded byte into a mask
 ; color c__ -> 1111, others -> 0000
