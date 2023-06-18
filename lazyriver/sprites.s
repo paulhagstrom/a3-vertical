@@ -118,6 +118,9 @@ setsprites:
             
             lda PlayerY         ; where we would like to start
             jsr scrcompute      ; compute the adjusted lines
+            lda PlayerX
+            asl                 ; x2
+            sta ScrX            ; byte at which to start drawing sprite
             
             lda #$40            ; save background into $440, $460
             sta ZPtrG
@@ -187,8 +190,11 @@ spblitline: lda (ZPtrE), y      ; screen byte A
             adc #$04
             sta ZPtrH
             jmp spblit
-spdone:            
-            sec                 ; took time
+spdone:     
+            lda PlayerX         ; remember where we drew this for erasing
+            sta PlayXPrev
+            lda PlayerY
+            sta PlayYPrev
             rts
 
 ; compute the adjusted lines
@@ -216,16 +222,11 @@ scrcompute: sta ZPxScratch
             inx
             cpx #$08
             bne :-
-            
-            lda PlayerX
-            asl                 ; x2
-            sta ScrX            ; byte at which to start drawing sprite
             rts
             
 ; erase sprites on nonvisible page
-; TODO - this is computing too much, sprite might move between draw and erase
+; TODO - this is computing too much,
 ; should keep track of where the bytes are and just blast them back
-; (otherwise, keep track of prior X, Y and recompute based on those)
 clrsprites:
             jsr pgcompute       ; set ScrOffset and PgIndex
             
@@ -238,8 +239,11 @@ clrsprites:
             sta ZPtrG + XByte   ; background cache A
             sta ZPtrH + XByte   ; background cache B
             
-            lda PlayerY         ; where we would like to start
+            lda PlayYPrev       ; where we would like to start
             jsr scrcompute      ; compute the adjusted lines
+            lda PlayXPrev
+            asl                 ; x2
+            sta ScrX            ; byte at which to start drawing sprite
             
             lda #$40            ; background saved into $440, $460
             sta ZPtrG
