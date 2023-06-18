@@ -18,7 +18,7 @@
 ; sprite line 7 - display line C - adjusted line E
 ;
 ; That is, to draw on display line y, we draw to
-; int(y/8) + (y+offset)%8
+; 8*int(y/8) + (y+offset)%8
 ;
 ; To draw the sprite itself, we need to compute the targets and then move
 ; the data.  The data is 64 bytes, and we want to load the background, stash
@@ -61,7 +61,7 @@ ScrOffset:  .byte 0             ; place to store PgOneOff for drawing page
 CurrY:      .byte 0             ; current Y raster
 ScrX:       .byte 0             ; byte to start drawing (2x from left)
 
-; set ScrOffset and PgIndex
+; set ScrOffset, ZCacheBase, and ZPageBase
 pgcompute:  lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
@@ -94,28 +94,29 @@ setsprites:
             sta ZPtrA + XByte   ; data A
             sta ZPtrB + XByte   ; data B
             sta ZPtrC + XByte   ; mask A
-            sta ZPtrD + XByte   ; mask C
+            sta ZPtrD + XByte   ; mask B
 
             ; locate sprite data
             ; starts at $1500 + (n/2)*$700 + (n%2)*$80 + (x-offset)*$100
             ; cheat for now since we have only one sprite, it'll just be $1500+off*$100
             
-            lda PlayerXOff
+            lda PlayerXOff      ; select which shift, each shift is $100
             clc
-            adc #$15
+            adc #$15            ; sprite base page
             sta ZPtrA + 1
             sta ZPtrB + 1
             sta ZPtrC + 1
             sta ZPtrD + 1
-            lda #$00
+            lda #$00            ; data A
             sta ZPtrA
-            adc #$20
+            adc #$20            ; data B
             sta ZPtrB
-            adc #$20
+            adc #$20            ; mask A
             sta ZPtrC
-            adc #$20
+            adc #$20            ; mask B
             sta ZPtrD
             
+            lda PlayerY         ; where we would like to start
             jsr scrcompute      ; compute the adjusted lines
             
             lda #$40            ; save background into $440, $460
@@ -191,17 +192,17 @@ spdone:
             rts
 
 ; compute the adjusted lines
-scrcompute: lda PlayerY         ; where we would like to start
-            sta ZPxScratch
+; enter with A holding the screen line we're targeting
+; (the sprite would go from there to there plus 7)
+
+scrcompute: sta ZPxScratch
             clc
             adc ScrOffset
             and #$07            ; (y+offset)%8
             tay                 ; stash in y
             ldx #$00
 :           lda ZPxScratch      ; retrieve PlayerY
-            lsr
-            lsr
-            lsr                 ; int(y/8)
+            and #%11111000      ; 8*(int(y/8))
             sta ZTileCache, x
             tya                 ; (y+offset)%8
             clc
@@ -222,7 +223,9 @@ scrcompute: lda PlayerY         ; where we would like to start
             rts
             
 ; erase sprites on nonvisible page
-
+; TODO - this is computing too much, sprite might move between draw and erase
+; should keep track of where the bytes are and just blast them back
+; (otherwise, keep track of prior X, Y and recompute based on those)
 clrsprites:
             jsr pgcompute       ; set ScrOffset and PgIndex
             
@@ -235,6 +238,7 @@ clrsprites:
             sta ZPtrG + XByte   ; background cache A
             sta ZPtrH + XByte   ; background cache B
             
+            lda PlayerY         ; where we would like to start
             jsr scrcompute      ; compute the adjusted lines
             
             lda #$40            ; background saved into $440, $460
