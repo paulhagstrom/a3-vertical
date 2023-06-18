@@ -138,7 +138,7 @@ ssdoscroll: jsr scrollmap
 ; a line is 20 ($14) bytes long in the map representation
 ; enter with: X being the row of the map we are caching
 ; assumes:
-; - ZMapPtr + XByte has already been set to #$82 (bank 2)
+; - ZMapPtr + XByte has already been set to #$81 (bank 1)
 ; - ZP is at $1A00
 ; does not disturb X
 
@@ -162,7 +162,7 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
 ; set up pointers and banks for graphics interaction
 ; bank 0 for graphics, ZPtrA for map tiles
 ; X, Y, carry survive
-gfxinit:    lda #$82            ; map is bank 2
+gfxinit:    lda #$81            ; map is bank 1
             sta ZMapPtr + XByte
             sta ZPtrA + XByte
             lda #$14            ; tile graphics start at $1400
@@ -179,7 +179,7 @@ gfxinit:    lda #$82            ; map is bank 2
 ; assumes:
 ; - tile cache holds the tile graphics addresses for tiles including this line
 ; - ZP is $1A00
-; - ZPtrA already points to tile asset data in bank 2
+; - ZPtrA already points to tile asset data in bank 1
 ; each tile takes two bytes on the screen, so index of start of pixel data
 ; on the screen is 2x the index into cache of tile data
 ; (That is: tile 3 is filling bytes 6 and 7 on the screen)

@@ -33,6 +33,7 @@ PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
+GroundVel:  .byte   0                       ; Y-velocity of the ground (neg, 0, pos)
 PgOneTop:   .byte   0                       ; map row at top of the screen on page 1
 PgTwoTop:   .byte   0                       ; map row at top of the screen on page 2 (must follow PgOneTop)
 PgOneOff:   .byte   0                       ; scroll offset on page 1
@@ -76,17 +77,24 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
             sta VBLTick
             lda #$00                        ; mark this cycle as not having flipped yet
             sta FlipDone
+            sta SprDrawn
             jsr domove                      ; game clock has ticked, move everyone (takes time)
             jmp eventloop                   ; go back up to schedule in all the other stuff
             ; when not on the game clock, do everything else until we hit the game clock again
 offtick:
             jsr fixscroll                   ; scroll nonvisible page if movement is needed
             bcs eventloop                   ; go back around if we spent some time
+SprDrawn = *+1
+            lda #INLINEVAR                  ; nonzero if we have drawn the sprites this cycle
+            bne :+
             jsr setsprites                  ; draw sprites on nonvisible page
-            bcs eventloop                   ; go back around if we spent some time
+            inc SprDrawn
+            lda #$00
+            sta SprCleared
+            jmp eventloop                   ; go back around
             ; if we made it here then we are ready to flip... unless we already did
 FlipDone = *+1
-            lda #INLINEVAR                  ; nonzero if we have flipped this game clock cycle
+:           lda #INLINEVAR                  ; nonzero if we have flipped this game clock cycle
             bne flipped
             ; wait until just after we pass the flip tick VBL
             lda #FlipTick
@@ -98,9 +106,13 @@ stallvbl:   cmp VBLTick
             sta ShownPage                   ; this is inline in HBL interrupt handler
             inc FlipDone                    ; no more flipping during this game clock cycle
             jsr fixnudge                    ; set the smooth scroll parameter on visible page
-flipped:    jsr clrsprites                  ; erase sprites on nonvisible page
-            bcs eventloop                   ; go back around if we spent some time
-            jsr syncscroll                  ; scroll nonvisible page to match visible one
+SprCleared = *+1
+flipped:    lda #INLINEVAR                  ; nonzero if we have cleared the sprites this cycle
+            bne :+
+            jsr clrsprites                  ; erase sprites on nonvisible page
+            inc SprCleared
+            jmp eventloop                   ; go back around if we spent some time
+:           jsr syncscroll                  ; scroll nonvisible page to match visible one
             bcs eventloop                   ; go back around if we spent some time
             jsr drawstatus                  ; redraw score, burn a few cycles
             jmp eventloop
@@ -154,12 +166,27 @@ handlekey:
             lda #$00
             sta VelocityY
             jmp keydone
-:           cmp #$AC            ; , (down, scroll map up)
+:           cmp #$AC            ; , (down)
             bne :+
             lda #$00
             sta VelocityX
             lda #$01
             sta VelocityY
+            jmp keydone
+:           cmp #$D1            ; Q (ground stop)
+            bne :+
+            lda #$00
+            sta GroundVel
+            jmp keydone
+:           cmp #$DA            ; Z (down, scroll ground up)
+            bne :+
+            lda #$01
+            sta GroundVel
+            jmp keydone
+:           cmp #$C1            ; A (up, scroll ground down)
+            bne :+
+            lda #$FF
+            sta GroundVel
             jmp keydone
 :           cmp #$C5            ; E (exit)
             bne keydone            
@@ -238,7 +265,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON            
             jsr seedRandom      ; seed the "random" number list
-            jsr buildmap        ; set up map data (in bank 2)
+            jsr buildmap        ; set up map data (in bank 1)
             jsr buildgfx        ; define graphics assets
             ;jsr buildsfx        ; define sound effects
             lda #232            ; top map row when we start (makes bottom row 255)
@@ -246,7 +273,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PgTwoTop        ; top map row - page 2
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
-            lda #$FC            ; Start down near the bottom
+            lda #128            ; Start down near the bottom of the screen
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
@@ -258,6 +285,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta KeyCaught
             sta VelocityX       ; player X velocity, can be negative, zero, or positive
             sta VelocityY       ; player Y velocity, can be negative, zero, or positive
+            sta GroundVel       ; ground velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
             lda #$01            ; number of logs, this ought to be level-dependent

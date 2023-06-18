@@ -5,7 +5,7 @@
 ; map has 256 tiles down, build from the bottom up
 ; (since it starts wide and will probably get narrow further on)
 
-; Map data and element tracking variables are in bank 2
+; Map data and element tracking variables are in bank 1
 ; Map data lives from $0000-1400.
 ; Element tracking variables are from $300-AFF.
 
@@ -61,7 +61,7 @@ bmidxdone:
             lda #$00        ; start shore velocity at 0 (straight up)
             sta ShoreLV
             sta ShoreRV
-            lda #$82        ; put ZPtrA in bank 2
+            lda #$81        ; put ZPtrA in bank 1
             sta ZPtrA + XByte
             ; fill the current line
             ; Y will (still) hold MapLine (0) at the beginning

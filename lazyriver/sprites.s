@@ -55,55 +55,238 @@
 ; $440 + (n * $40), up to an n of 15.
 ; or up to an n of 30 if we just ensure there is no n=16.
 
-; find raster line of sprite
-; come in with A = map Y coordinate, Y = offset
-
-sprraster:  sec                 ; A has map tile coordinate on entry
-            sbc PgOneTop, x
-            bcs sprrb
-            ; map tile coordinate is above the screen top
-            cmp #<-1
-            bcc sproff
-            ; map tile coordinate is just above the top, maybe partly on screen
-            ; TODO - do something rational here
-sprrb:
-            asl
-            asl
-            asl                 ; x8
-            sta ZSpriteOff      ; save for later adding
-            tya                 ; offset comes in in Y
-            sec
-            sbc PgOneOff, x
-            ; 
-            adc ZSpriteOff
-            adc #$08
-            rts
-sproff:     ; sprite is off screen
-            rts
-
 ; draw sprites on nonvisible page
 
-PgIndex:    .byte 0             ; 0 if drawing on page 1, 1 if drawing on page 2
+ScrOffset:  .byte 0             ; place to store PgOneOff for drawing page
+CurrY:      .byte 0             ; current Y raster
+ScrX:       .byte 0             ; byte to start drawing (2x from left)
 
-setsprites:
-            lda ShownPage       
+; set ScrOffset and PgIndex
+pgcompute:  lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tax
-            stx PgIndex
-            
-            ; draw player sprite
-            ; player is on the map at PlayerX, PlayerY,
-            ; offset by PlayerXOff, PlayerYOff
-            
-            lda PlayerY
-            ldy PlayerYOff
-            ;jsr sprraster
-            
+            ror                 ; carry
+            ror                 ; $80
+            ror                 ; $40
+            sta ZPageBase       ; $40 if nonvisible is page 2, $00 if page 1
+            txa
+            asl
+            asl
+            adc #$04
+            sta ZCacheBase      ; $08 if nonvisible is page 2, $04 if page 1
+            lda PgOneOff, x     ; keep track of the scroll value of the screen
+            sta ScrOffset
             rts
 
+setsprites: 
+            jsr pgcompute       ; set ScrOffset and PgIndex
+            
+            ; set up pointer banks
+            ; TODO - optimize so that these don't need to be set repeatedly
+            lda #$80            ; bank zero (display)
+            sta ZPtrE + XByte   ; graphics A
+            sta ZPtrF + XByte   ; graphics B
+            lda #$8F            ; access to text pages
+            sta ZPtrG + XByte   ; background cache A
+            sta ZPtrH + XByte   ; background cache B
+            lda #$81            ; bank 1 (map and graphics assets)
+            sta ZPtrA + XByte   ; data A
+            sta ZPtrB + XByte   ; data B
+            sta ZPtrC + XByte   ; mask A
+            sta ZPtrD + XByte   ; mask C
+
+            ; locate sprite data
+            ; starts at $1500 + (n/2)*$700 + (n%2)*$80 + (x-offset)*$100
+            ; cheat for now since we have only one sprite, it'll just be $1500+off*$100
+            
+            lda PlayerXOff
+            clc
+            adc #$15
+            sta ZPtrA + 1
+            sta ZPtrB + 1
+            sta ZPtrC + 1
+            sta ZPtrD + 1
+            lda #$00
+            sta ZPtrA
+            adc #$20
+            sta ZPtrB
+            adc #$20
+            sta ZPtrC
+            adc #$20
+            sta ZPtrD
+            
+            jsr scrcompute      ; compute the adjusted lines
+            
+            lda #$40            ; save background into $440, $460
+            sta ZPtrG
+            lda #$60
+            sta ZPtrH
+            lda ZCacheBase
+            sta ZPtrG + 1
+            sta ZPtrH + 1
+            
+            ldx #$00
+            stx ZSprLine
+
+            ; do a line
+            ; set ZPtrE and ZPtrF to point to pages A and B of nondisplayed page
+spblit:
+            ldy ZTileCache, x
+            lda YHiresH, y
+            clc
+            adc ZPageBase
+            sta ZPtrF + 1       ; in bank 0, page B
+            sec
+            sbc #$20
+            sta ZPtrE + 1       ; in bank 0, page A
+            lda YHiresL, y
+            clc
+            adc ScrX
+            sta ZPtrE
+            sta ZPtrF
+            
+            ldy #$03
+spblitline: lda (ZPtrE), y      ; screen byte A
+            sta (ZPtrG), y      ; save background A
+            and (ZPtrC), y      ; mask A
+            ora (ZPtrA), y      ; draw
+            sta (ZPtrE), y      ; replace screen byte A
+            lda (ZPtrF), y      ; screen byte B
+            sta (ZPtrH), y      ; save background B
+            and (ZPtrD), y      ; mask B
+            ora (ZPtrB), y      ; draw
+            sta (ZPtrF), y      ; replace screen byte B
+            dey
+            bpl spblitline
+
+            inc ZSprLine
+            ldx ZSprLine
+            cpx #$08
+            beq spdone            
+            
+            ; push all data pointers ahead 4 bytes
+            clc                 ; nothing below should set carry
+            lda ZPtrA
+            adc #$04
+            sta ZPtrA
+            lda ZPtrB
+            adc #$04
+            sta ZPtrB
+            lda ZPtrC
+            adc #$04
+            sta ZPtrC
+            lda ZPtrD
+            adc #$04
+            sta ZPtrD
+            lda ZPtrG
+            adc #$04
+            sta ZPtrG
+            lda ZPtrH
+            adc #$04
+            sta ZPtrH
+            jmp spblit
+spdone:            
+            sec                 ; took time
+            rts
+
+; compute the adjusted lines
+scrcompute: lda PlayerY         ; where we would like to start
+            sta ZPxScratch
+            clc
+            adc ScrOffset
+            and #$07            ; (y+offset)%8
+            tay                 ; stash in y
+            ldx #$00
+:           lda ZPxScratch      ; retrieve PlayerY
+            lsr
+            lsr
+            lsr                 ; int(y/8)
+            sta ZTileCache, x
+            tya                 ; (y+offset)%8
+            clc
+            adc ZTileCache, x
+            sta ZTileCache, x
+            iny                 ; add one to y+offset
+            tya
+            and #$07            ; and mod 8
+            tay
+            inc ZPxScratch      ; increase display line
+            inx
+            cpx #$08
+            bne :-
+            
+            lda PlayerX
+            asl                 ; x2
+            sta ScrX            ; byte at which to start drawing sprite
+            rts
+            
 ; erase sprites on nonvisible page
 
 clrsprites:
+            jsr pgcompute       ; set ScrOffset and PgIndex
+            
+            ; set up pointer banks
+            ; TODO - optimize so that these don't need to be set repeatedly
+            lda #$80            ; bank zero (display)
+            sta ZPtrE + XByte   ; graphics A
+            sta ZPtrF + XByte   ; graphics B
+            lda #$8F            ; access to text pages
+            sta ZPtrG + XByte   ; background cache A
+            sta ZPtrH + XByte   ; background cache B
+            
+            jsr scrcompute      ; compute the adjusted lines
+            
+            lda #$40            ; background saved into $440, $460
+            sta ZPtrG
+            lda #$60
+            sta ZPtrH
+            lda ZCacheBase
+            sta ZPtrG + 1
+            sta ZPtrH + 1
+            
+            ldx #$00
+            stx ZSprLine
+
+            ; do a line
+            ; set ZPtrE and ZPtrF to point to pages A and B of nondisplayed page
+csblit:
+            ldy ZTileCache, x
+            lda YHiresH, y
+            clc
+            adc ZPageBase
+            sta ZPtrF + 1       ; in bank 0, page B
+            sec
+            sbc #$20
+            sta ZPtrE + 1       ; in bank 0, page A
+            lda YHiresL, y
+            clc
+            adc ScrX
+            sta ZPtrE
+            sta ZPtrF
+            
+            ldy #$03
+csblitline: lda (ZPtrG), y      ; saved background A
+            sta (ZPtrE), y      ; screen byte A
+            lda (ZPtrH), y      ; saved background B
+            sta (ZPtrF), y      ; screen byte B
+            dey
+            bpl csblitline
+
+            inc ZSprLine
+            ldx ZSprLine
+            cpx #$08
+            beq csdone            
+            
+            ; push all data pointers ahead 4 bytes
+            clc                 ; nothing below should set carry
+            lda ZPtrG
+            adc #$04
+            sta ZPtrG
+            lda ZPtrH
+            adc #$04
+            sta ZPtrH
+            jmp csblit
+csdone:            
             rts
             

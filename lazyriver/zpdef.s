@@ -21,9 +21,14 @@ ZCurrMapL   = $18   ; current map line (used in paintmap)
 ZLinesLeft  = $19   ; lines remaining to draw (used in paintmap)
 
 ; scratch pointers
-ZPtrA       = $28
-ZPtrB       = $2A
-ZPtrC       = $2C
+ZPtrA       = $20
+ZPtrB       = $22
+ZPtrC       = $24
+ZPtrD       = $26
+ZPtrE       = $28
+ZPtrF       = $2A
+ZPtrG       = $2C
+ZPtrH       = $2E
 
 ; game state variables
 ; so far not really used
@@ -96,10 +101,10 @@ ZPixByteP   = $E5
 
 ZSprLeft    = $E8
 ZShiftsLeft = $E9
-ZSprLnsLeft = $EA
-
-; hires update during movement processing
-ZDirtStack  = $EC   ; pointer to dirty column group stack pointers - E2 E3 E4 E5 E6 E7 E8 E9 EA
+ZSprLine    = $EA
+ZPageBase   = $EB
+ZCacheBase  = $EC
+ZSprLnsLeft = $ED
 
 ; Addresses are used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,
