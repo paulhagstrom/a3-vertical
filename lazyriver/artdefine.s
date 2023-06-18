@@ -90,7 +90,7 @@ buildtiles: lda #$14            ; start map tiles at $1400
             sty ZPtrA + XByte
             ldy #$00
             sty ZPtrA
-            bgtile:     tya
+bgtile:     tya
             pha                 ; stash start index of tile line
             ; store definition line in ZPixByteA-ZpixByteD
             lda MapTiles, y

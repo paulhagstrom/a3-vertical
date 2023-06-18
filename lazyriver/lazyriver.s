@@ -30,7 +30,9 @@ Seed:       .byte   0                       ; current place in the "random" numb
 PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
 PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
 PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
-PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
+PlayXPrev:  .byte   0                       ; PlayerX before domove, for sprite erasing
+PlayYPrev:  .byte   0                       ; PlayerY before domove, for sprite erasing
+;PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 GroundVel:  .byte   0                       ; Y-velocity of the ground (neg, 0, pos)
@@ -71,51 +73,55 @@ KeyCaught = *+1                             ; keyboard interrupt pushes a caught
             jsr handlekey                   ; if there was a key, handle it
 VBLTick = *+1                               ; ticked down for each VBL, governs game speed
 :           lda #INLINEVAR                  ; wait for game clock to tick
-            bne offtick                     ; based on number of VBLs set in MoveDelay
+            bne dotask                      ; based on number of VBLs set in MoveDelay
             ; on the game clock, do movement and update animation
             lda #MoveDelay                  ; reset the game clock
             sta VBLTick
-            lda #$00                        ; mark this cycle as not having flipped yet
-            sta FlipDone
-            sta SprDrawn
-            jsr domove                      ; game clock has ticked, move everyone (takes time)
-            jmp eventloop                   ; go back up to schedule in all the other stuff
-            ; when not on the game clock, do everything else until we hit the game clock again
-offtick:
-            jsr fixscroll                   ; scroll nonvisible page if movement is needed
-            bcs eventloop                   ; go back around if we spent some time
-SprDrawn = *+1
-            lda #INLINEVAR                  ; nonzero if we have drawn the sprites this cycle
+            lda #$01                        ; mark this cycle as not having flipped yet
+            sta TaskStep
+TaskStep = *+1
+dotask:     lda #INLINEVAR
+            cmp #$01                        ; do movement processing
             bne :+
-            jsr setsprites                  ; draw sprites on nonvisible page
-            inc SprDrawn
-            lda #$00
-            sta SprCleared
-            jmp eventloop                   ; go back around
-            ; if we made it here then we are ready to flip... unless we already did
-FlipDone = *+1
-:           lda #INLINEVAR                  ; nonzero if we have flipped this game clock cycle
-            bne flipped
-            ; wait until just after we pass the flip tick VBL
+            jsr domove
+            inc TaskStep
+            bne eventloop
+:           cmp #$02                        ; scroll ground on nonvisible page if needed
+            bne :+
+            jsr fixscroll
+            inc TaskStep
+            bne eventloop
+:           cmp #$03                        ; draw sprites on nonvisible page
+            bne :+
+            jsr setsprites
+            inc TaskStep
+            bne eventloop
+:           cmp #$04                        ; wait for FlipTick and flip pages
+            bne :+
             lda #FlipTick
-stallvbl:   cmp VBLTick
+            cmp VBLTick
             bcs eventloop
-            ; flip visible and nonvisible pages
             lda ShownPage
-            eor #$01                        ; (C0)54 <-> (C0)55
-            sta ShownPage                   ; this is inline in HBL interrupt handler
-            inc FlipDone                    ; no more flipping during this game clock cycle
-            jsr fixnudge                    ; set the smooth scroll parameter on visible page
-SprCleared = *+1
-flipped:    lda #INLINEVAR                  ; nonzero if we have cleared the sprites this cycle
+            eor #$01
+            sta ShownPage
+            jsr fixnudge
+            inc TaskStep
+            bne eventloop
+:           cmp #$05                        ; erase sprites on (newly) nonvisible page
             bne :+
-            jsr clrsprites                  ; erase sprites on nonvisible page
-            inc SprCleared
-            jmp eventloop                   ; go back around if we spent some time
-:           jsr syncscroll                  ; scroll nonvisible page to match visible one
-            bcs eventloop                   ; go back around if we spent some time
-            jsr drawstatus                  ; redraw score, burn a few cycles
-            jmp eventloop
+            jsr clrsprites
+            inc TaskStep
+            bne eventloop
+:           cmp #$06                        ; sync ground scroll on nonvis page with vis page
+            bne :+
+            jsr syncscroll
+            inc TaskStep
+            bne eventloop
+:           cmp #$07                        ; draw score
+            bne :+
+            jsr drawstatus
+            inc TaskStep
+:           bne eventloop
             
 alldone:    lda #$7F                        ;disable all interrupts
             sta RD_INTENAB
@@ -273,13 +279,16 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PgTwoTop        ; top map row - page 2
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
+            sta PlayXPrev
             lda #128            ; Start down near the bottom of the screen
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
+            sta PlayYPrev
+            sta TaskStep        ; unallocated task step to stall until game clock ticks
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
-            sta PlayerYOff      ; this is the Y offset (0-7) of the player from the top of the tile
+            ;sta PlayerYOff      ; this is the Y offset (0-7) of the player from the top of the tile
             sta PlayerXOff      ; this is the X offset (0-7) of the player from the left of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
