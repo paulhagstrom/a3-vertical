@@ -54,39 +54,101 @@
 ; but, yes, cache background for sprite n in:
 ; $440 + (n * $40), up to an n of 15.
 ; or up to an n of 30 if we just ensure there is no n=16.
-
+; actually $480 might be the first safe one in $400 because
+; I am using $428-477 for a line buffer in mapscroll.
 ; draw sprites on nonvisible page
 
+PgIndex:    .byte 0             ; 0 if page 1 nondisplayed, 1 page 2
 ScrOffset:  .byte 0             ; place to store PgOneOff for drawing page
-CurrY:      .byte 0             ; current Y raster
 ScrX:       .byte 0             ; byte to start drawing (2x from left)
+SprDrawn:   .byte 0, 0          ; nonzero if sprite was drawn on this page
+SprX:       .byte 0, 0          ; X at which the sprite was drawn
+SprY:       .byte 0, 0          ; Y at which the sprite was drawn
 
-; set ScrOffset, ZCacheBase, and ZPageBase
+; TODO - SprDrawn should exist for each sprite
+; point is not to erase a sprite we never drew, useful here for
+; the first time through with the player sprite
+
+; set ScrOffset, ZCacheBase, and ZPageBase, PgIndex
+; return with x holding PgIndex
 pgcompute:  lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tax
-            ror                 ; carry
+            lsr                 ; carry
             ror                 ; $80
             ror                 ; $40
             sta ZPageBase       ; $40 if nonvisible is page 2, $00 if page 1
-            txa
-            asl
-            asl
-            adc #$04
-            sta ZCacheBase      ; $08 if nonvisible is page 2, $04 if page 1
+            txa                 ; pgindex
+            asl                 ; 2
+            asl                 ; 4
+            adc #$04            ; carry known to be clear
+            sta ZCacheBase      ; $04 if nonvisible is page 1, $08 if page 2
             lda PgOneOff, x     ; keep track of the scroll value of the screen
             sta ScrOffset
+            stx PgIndex
             rts
 
-setsprites: 
-            jsr pgcompute       ; set ScrOffset and PgIndex
+; compute the adjusted lines
+; enter with A holding the screen line we're targeting
+; (the sprite would go from there to there plus 7)
+; assumes ScrOffset is already set for this screen
+
+scrcompute: sta ZPxScratch
+            clc
+            adc ScrOffset
+            and #$07            ; (y+offset)%8
+            tay                 ; stash in y
+            ldx #$00
+:           lda ZPxScratch      ; retrieve PlayerY
+            and #%11111000      ; 8*(int(y/8))
+            sta ZTileCache, x
+            tya                 ; retrieve (y+offset)%8
+            clc
+            adc ZTileCache, x   ; add to 8*(int(y/8))
+            sta ZTileCache, x   ; and store it in the cache
+            iny                 ; add one to y+offset
+            tya
+            and #$07            ; and mod 8
+            tay                 ; put it back in y for next time around
+            inc ZPxScratch      ; increase display line
+            inx
+            cpx #$08
+            bne :-
+            rts
+
+; set the pointers into the graphics page (ZPtrE for A, ZPtrF for B)
+; assuming that they will be accessed indirectly, so based at $0000
+; instead of $2000. (1A: $0000, 1B: $2000, 2A: $4000, 2B: $6000)
+; enter with:
+; - x being the line of the sprite we are drawing (0-8)
+; assumes:
+; - ZPageBase has been set to $00 or $40 (pgcompute) for target page
+; - ScrX is the byte to start at (2x x-coordinate)
+; - scrcompute has computed the line adjustments for scroll offset
+
+setgrptrs:  ldy ZTileCache, x   ; adjusted raster line for sprite line x
+            lda YHiresH, y      ; look up $20-based line start high byte
+            clc
+            adc ZPageBase       ; adjust for page ($20 or $60)
+            sta ZPtrF + 1       ; addressing within bank 0, B half
+            sec
+            sbc #$20            ; back to A half ($00 or $40)
+            sta ZPtrE + 1       ; in bank 0, A half
+            lda YHiresL, y
+            clc
+            adc ScrX            ; byte to draw on
+            sta ZPtrE
+            sta ZPtrF
+            rts
+            
+setsprites: jsr pgcompute       ; set ScrOffset, PgIndex, ZCacheBase, ZPageBase
             
             ; set up pointer banks
             ; TODO - optimize so that these don't need to be set repeatedly
-            lda #$80            ; bank zero (display)
-            sta ZPtrE + XByte   ; graphics A
-            sta ZPtrF + XByte   ; graphics B
+            lda #$80            ; bank zero (display at $0000-7FFF)
+            sta ZPtrE + XByte   ; graphics A (e.g., 0000-1FFF)
+            sta ZPtrF + XByte   ; graphics B (e.g., 2000-3FFF)
             lda #$8F            ; access to text pages
             sta ZPtrG + XByte   ; background cache A
             sta ZPtrH + XByte   ; background cache B
@@ -107,67 +169,53 @@ setsprites:
             sta ZPtrB + 1
             sta ZPtrC + 1
             sta ZPtrD + 1
-            lda #$00            ; data A
+            lda #$00            ; data A (e.g., $1500)
             sta ZPtrA
-            adc #$20            ; data B
+            adc #$20            ; data B (e.g., $1520)
             sta ZPtrB
-            adc #$20            ; mask A
+            adc #$20            ; mask A (e.g., $1540)
             sta ZPtrC
-            adc #$20            ; mask B
+            adc #$20            ; mask B (e.g., $1560)
             sta ZPtrD
             
             lda PlayerY         ; where we would like to start
             jsr scrcompute      ; compute the adjusted lines
-            lda PlayerX
+            lda PlayerX         ; map tile (0-19) we are on
             asl                 ; x2
-            sta ScrX            ; byte at which to start drawing sprite
+            sta ScrX            ; byte at which to start drawing (evens 0-38)
             
-            lda #$40            ; save background into $440, $460
+            lda #$80            ; save background into $480, $4A0
             sta ZPtrG
-            lda #$60
+            lda #$A0
             sta ZPtrH
-            lda ZCacheBase
+            lda ZCacheBase      ; 4 or 8 depending on which page we're drawing on
             sta ZPtrG + 1
             sta ZPtrH + 1
             
             ldx #$00
-            stx ZSprLine
-
-            ; do a line
-            ; set ZPtrE and ZPtrF to point to pages A and B of nondisplayed page
-spblit:
-            ldy ZTileCache, x
-            lda YHiresH, y
-            clc
-            adc ZPageBase
-            sta ZPtrF + 1       ; in bank 0, page B
-            sec
-            sbc #$20
-            sta ZPtrE + 1       ; in bank 0, page A
-            lda YHiresL, y
-            clc
-            adc ScrX
-            sta ZPtrE
-            sta ZPtrF
+spblit:     stx ZSprLine
+            jsr setgrptrs       ; set ZPtrE/F for pages A/B of nondisplayed page
             
             ldy #$03
 spblitline: lda (ZPtrE), y      ; screen byte A
             sta (ZPtrG), y      ; save background A
             and (ZPtrC), y      ; mask A
-            ora (ZPtrA), y      ; draw
+            ora (ZPtrA), y      ; data A
+            ;lda DebugBrMagA, y
             sta (ZPtrE), y      ; replace screen byte A
             lda (ZPtrF), y      ; screen byte B
             sta (ZPtrH), y      ; save background B
             and (ZPtrD), y      ; mask B
-            ora (ZPtrB), y      ; draw
+            ora (ZPtrB), y      ; data B
+            ;lda DebugBrMagB, y
             sta (ZPtrF), y      ; replace screen byte B
             dey
             bpl spblitline
 
-            inc ZSprLine
             ldx ZSprLine
+            inx
             cpx #$08
-            beq spdone            
+            beq spdone
             
             ; push all data pointers ahead 4 bytes
             clc                 ; nothing below should set carry
@@ -191,44 +239,23 @@ spblitline: lda (ZPtrE), y      ; screen byte A
             sta ZPtrH
             jmp spblit
 spdone:     
-            lda PlayerX         ; remember where we drew this for erasing
-            sta PlayXPrev
+            ldx PgIndex
+            lda #$01
+            sta SprDrawn, x     ; mark this sprite as having been drawn
             lda PlayerY
-            sta PlayYPrev
+            sta SprY, x         ; remember where we drew it
+            lda ScrX
+            sta SprX, x
             rts
 
-; compute the adjusted lines
-; enter with A holding the screen line we're targeting
-; (the sprite would go from there to there plus 7)
-
-scrcompute: sta ZPxScratch
-            clc
-            adc ScrOffset
-            and #$07            ; (y+offset)%8
-            tay                 ; stash in y
-            ldx #$00
-:           lda ZPxScratch      ; retrieve PlayerY
-            and #%11111000      ; 8*(int(y/8))
-            sta ZTileCache, x
-            tya                 ; (y+offset)%8
-            clc
-            adc ZTileCache, x
-            sta ZTileCache, x
-            iny                 ; add one to y+offset
-            tya
-            and #$07            ; and mod 8
-            tay
-            inc ZPxScratch      ; increase display line
-            inx
-            cpx #$08
-            bne :-
-            rts
-            
 ; erase sprites on nonvisible page
 ; TODO - this is computing too much,
 ; should keep track of where the bytes are and just blast them back
-clrsprites:
-            jsr pgcompute       ; set ScrOffset and PgIndex
+clrsprites: jsr pgcompute       ; set ScrOffset, PgIndex, ZCacheBase, ZPageBase
+            lda SprDrawn, x     ; check to be sure this sprite was actually drawn
+            beq csdone          ; branch away to return if it was not drawn
+            lda #$00
+            sta SprDrawn, x     ; mark (in advance) this sprite as erased
             
             ; set up pointer banks
             ; TODO - optimize so that these don't need to be set repeatedly
@@ -239,39 +266,22 @@ clrsprites:
             sta ZPtrG + XByte   ; background cache A
             sta ZPtrH + XByte   ; background cache B
             
-            lda PlayYPrev       ; where we would like to start
+            lda SprX, x         ; recall the byte we drew the sprite at
+            sta ScrX            ; should be (prior) PlayerX (in tiles) x2
+            lda SprY, x         ; recall the Y we drew the sprite at
             jsr scrcompute      ; compute the adjusted lines
-            lda PlayXPrev
-            asl                 ; x2
-            sta ScrX            ; byte at which to start drawing sprite
             
-            lda #$40            ; background saved into $440, $460
+            lda #$80            ; background saved into $480, $4A0
             sta ZPtrG
-            lda #$60
+            lda #$A0
             sta ZPtrH
-            lda ZCacheBase
+            lda ZCacheBase      ; $4 if drawing on page 1, $8 if drawing on page 2
             sta ZPtrG + 1
             sta ZPtrH + 1
             
             ldx #$00
-            stx ZSprLine
-
-            ; do a line
-            ; set ZPtrE and ZPtrF to point to pages A and B of nondisplayed page
-csblit:
-            ldy ZTileCache, x
-            lda YHiresH, y
-            clc
-            adc ZPageBase
-            sta ZPtrF + 1       ; in bank 0, page B
-            sec
-            sbc #$20
-            sta ZPtrE + 1       ; in bank 0, page A
-            lda YHiresL, y
-            clc
-            adc ScrX
-            sta ZPtrE
-            sta ZPtrF
+csblit:     stx ZSprLine
+            jsr setgrptrs       ; set ZPtrE/F for pages A/B of nondisplayed page
             
             ldy #$03
 csblitline: lda (ZPtrG), y      ; saved background A
@@ -281,8 +291,8 @@ csblitline: lda (ZPtrG), y      ; saved background A
             dey
             bpl csblitline
 
-            inc ZSprLine
             ldx ZSprLine
+            inx
             cpx #$08
             beq csdone            
             
@@ -297,4 +307,17 @@ csblitline: lda (ZPtrG), y      ; saved background A
             jmp csblit
 csdone:            
             rts
-            
+
+; brown = 1000
+DebugBrownA: .byte %00001000
+DebugBrownB: .byte %01000100
+DebugBrownC: .byte %00100010
+DebugBrownD: .byte %00010001
+; magenta = 0001
+DebugMagenA: .byte %01000100
+DebugMagenB: .byte %00100010
+DebugMagenC: .byte %00010001
+DebugMagenD: .byte %00001000
+; brown/magenta A/B pairs
+DebugBrMagA: .byte %00001000, %00100010, %01000100, %00010001
+DebugBrMagB: .byte %01000100, %00010001, %00100010, %00001000

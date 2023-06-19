@@ -143,15 +143,10 @@ bgsprites:  lda #$08
 bgsprite:   jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
             lda #$07            ; then do 7 shifts
             sta ZShiftsLeft
-bgsprline:  jsr bgdoshift       ; write masks/data for this sprite line, this shift
+bgsprline:  jsr bgwrshift       ; write masks/data for this sprite line, this shift
             dec ZShiftsLeft
             beq bgsprldone      ; branch if all shifts done
-            ; advance pointer to next shift, this sprite, this line
-            ; (back $10, ahead $100)
-            lda ZPtrA
-            sec
-            sbc #$10
-            sta ZPtrA
+            ; advance pointer to next shift, this sprite, this line (ahead $100)
             inc ZPtrA + 1
             jsr bgshift         ; shift pixels in the workspace to the right
             jmp bgsprline
@@ -165,7 +160,11 @@ bgsprldone: lda CurrSprLn       ; advance pointer into sprite definition
  :          dec ZSprLnsLeft
             beq bgsprdone       ; branch away if all lines are done
             ; ZPtr is just beyond the end of the sprite line data block
-            ; next line is 6 pages back
+            ; next line is 6 pages back, 4 bytes forward
+            lda ZPtrA
+            clc
+            adc #$04
+            sta ZPtrA
             lda ZPtrA + 1       ; back up $600 (e.g., from $1B to $15)
             sec
             sbc #$06
@@ -190,9 +189,11 @@ bgsprdone:  dec ZSprLeft
 bgalldone:  rts
 
 ; shift all pixels in the 2-tile buffer to the right
+; pi pj pk pl pm pn po pp
 ; AB CD EF G- HI JK LM N- => 
 ; _A BC DE F- GH IJ KL M-
 ; 00 01 02 03 04 05 06 07 index
+; a, x, y do not survive
 bgshift:    lda #$00
             sta ZPxScratch
             ldx #$06            ; last pixel does not survive
@@ -235,8 +236,8 @@ bgshiftd:   lda #(c__ * 16)     ; shift in a transparent pixel on the left
 ; - CurrSprLn points to current line in the sprite definition
             ; fill two-tile-wide line with sprite + 7 transparent pixels
 bgspreadln: lda #(c__*16 + c__) ; two transparent pixels
-            ldx #$03            ; make second 7 pixels transparent
-bgsprfill:  sta ZPixByteM, x
+            ldy #$03            ; make second 7 pixels transparent
+bgsprfill:  sta ZPixByteM, y
             dex
             bpl bgsprfill
             ldy #$03            ; move sprite into first 7 pixels
@@ -253,7 +254,7 @@ bgspradd:   lda INLINEADDR, y
 ; - ZPtrA points to storage location for this sprite masks/data
 ; ends with ZPtrA advanced by 4
 
-bgdoshift:  lda ZPtrA           ; set up the other three pointers
+bgwrshift:  lda ZPtrA           ; set up the other three pointers
             clc                 ; nothing below risks setting carry
             adc #$20
             sta ZPtrB
@@ -331,11 +332,6 @@ bgsprb:     lda ZPixByteM, y
             sta (ZPtrA), y
             lda ZPixByteH
             sta (ZPtrB), y
-            ; advance pointer (just A, rest get recomputed)
-            lda ZPtrA
-            clc
-            adc #$04
-            sta ZPtrA
             rts
 
 ; convert a sensibly-encoded byte into a mask
@@ -376,7 +372,7 @@ xlatequad:
             sta ZPixByteH       ; output
             tya
             and #$01            ; the bit we missed from pixel 5 (sensible)
-            ror                 ; in carry
+            lsr                 ; in carry
             ror                 ; in bit 8
             ror                 ; put it in bit 7
             sta ZPxScratch      ; stash
@@ -395,7 +391,7 @@ xlatequad:
             sta ZPixByteG       ; output
             tya
             and #$07            ; pixel 3 (sensible, partial)
-            ror                 ; bit 1 and carry
+            lsr                 ; bit 1 and carry
             ror                 ; carry and bit 8
             ror                 ; bit 8 and bit 7
             ror                 ; move into bits 6 and 7
@@ -554,8 +550,11 @@ Sprites:
             tile    c__, c__, c__, cPk, c__, c__, c__
             tile    c__, c__, cPk, cMg, cPk, c__, c__
             tile    c__, cPk, cMg, cMg, cMg, cPk, c__
-            tile    cPk, cMg, cMg, cMg, cMg, cMg, cPk
-            tile    cPk, cMg, cLB, cLB, cLB, cMg, cPk
-            tile    cPk, cMg, cLB, cLB, cLB, cMg, cPk
+            tile    cPk, cMg, cMg, c__, cMg, cMg, cPk
+            tile    cPk, cMg, c__, c__, c__, cMg, cPk
+            tile    cPk, cMg, c__, c__, c__, cMg, cPk
             tile    cPk, cOr, cMg, cMg, cMg, cMg, cPk
             tile    c__, cPk, cPk, cPk, cPk, cPk, c__
+
+
+

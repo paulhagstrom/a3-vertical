@@ -6,7 +6,14 @@
 
             .include "zpdef.s"
             .org     $A000 - 14
-            
+            ; note: if file gets bigger than 6144 then have to be lower than $A000
+            ; start leaves  start   leaves  start   leaves
+            ; 9F00  6400    9E00    6656    9D00    6912
+            ; 9C00  7167    9B00    7423    9A00    7679
+            ; 9900  7935    9800    8191    9700    8447
+            ; 9600  8703    9500    8959    9400    9215
+            ; 9300  9471
+
 ; SOS interpreter header
             .byte    "SOS NTRP"
             .word    0000
@@ -30,8 +37,6 @@ Seed:       .byte   0                       ; current place in the "random" numb
 PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
 PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
 PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
-PlayXPrev:  .byte   0                       ; PlayerX before domove, for sprite erasing
-PlayYPrev:  .byte   0                       ; PlayerY before domove, for sprite erasing
 ;PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
@@ -77,7 +82,7 @@ VBLTick = *+1                               ; ticked down for each VBL, governs 
             ; on the game clock, do movement and update animation
             lda #MoveDelay                  ; reset the game clock
             sta VBLTick
-            lda #$01                        ; mark this cycle as not having flipped yet
+            lda #$01                        ; restart task list from the start
             sta TaskStep
 TaskStep = *+1
 dotask:     lda #INLINEVAR
@@ -279,10 +284,8 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PgTwoTop        ; top map row - page 2
             lda #$09            ; start player kind of in the middle
             sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
-            sta PlayXPrev
             lda #128            ; Start down near the bottom of the screen
             sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
-            sta PlayYPrev
             sta TaskStep        ; unallocated task step to stall until game clock ticks
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
