@@ -28,7 +28,7 @@
 ; $15F8 - sprite 2 shift 0 line 8 4 B mask bytes
 ; $1600 - sprite 1 shift 1 line 1 4 A bytes
 ; ...
-; $16F8 - sprite 1 shift 1 line 8 4 B mask bytes
+; $16F8 - sprite 2 shift 1 line 8 4 B mask bytes
 ; $1700 - sprite 1 shift 2 line 1 4 A bytes
 ; ...
 ; $1BF8 - sprite 2 shift 6 line 8 4 B mask bytes
@@ -155,6 +155,7 @@ bgsprline:  jsr bgwrshift       ; write masks/data for this sprite line, this sh
 bgsprldone: lda CurrSprLn       ; advance pointer into sprite definition
             clc
             adc #$04
+            sta CurrSprLn
             bcc :+
             inc CurrSprLn + 1
  :          dec ZSprLnsLeft
@@ -214,7 +215,7 @@ bgshiftb:   lda ZPixByteI, x
             lsr
             sta ZPxScratch      ; becomes second pixel here
             dex
-            beq bgshiftd
+            bmi bgshiftd
             cpx #$03            ; at the juncture, special case
             beq bgshiftc
             bne bgshiftb        ; branch always

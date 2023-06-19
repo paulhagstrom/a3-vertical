@@ -50,14 +50,16 @@ dmheronov:  lda VelocityX
             cmp #18
             bcc dmherorok       ; at least a tile away from the edge, ok
             lda PlayerXOff
-            cmp #$07
-            bcs dmheronoh       ; branch if we can't move right
+            cmp #$06
+            beq dmheronoh       ; branch if we can't move right
 dmherorok:  inc PlayerXOff
             lda PlayerXOff
-            and #$07
-            bne :+
+            cmp #$07
+            bcc :+
+            lda #$00
+            sta PlayerXOff
             inc PlayerX
-:           bpl dmheronoh       ; branch always
+:           jmp dmheronoh
             ; hero moving left
 dmheroleft: lda PlayerX
             bne dmherolok
@@ -65,7 +67,7 @@ dmheroleft: lda PlayerX
             beq dmheronoh       ; branch if we can't move left
 dmherolok:  dec PlayerXOff
             bpl dmheronoh
-            lda #$07
+            lda #$06
             sta PlayerXOff
             dec PlayerX
 dmheronoh:
