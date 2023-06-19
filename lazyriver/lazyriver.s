@@ -150,9 +150,23 @@ IRQSaveC = *+1
 ; process keypress
 
 handlekey:  
-            cmp #$C9            ; I (up, scroll map down)
+            cmp #$C9            ; I (up)
             bne :+
             lda #$00
+            sta VelocityX
+            lda #$FF
+            sta VelocityY
+            jmp keydone
+:           cmp #$D5            ; U (up, left)
+            bne :+
+            lda #$FF
+            sta VelocityX
+            lda #$FF
+            sta VelocityY
+            jmp keydone
+:           cmp #$CF            ; O (up, right)
+            bne :+
+            lda #$01
             sta VelocityX
             lda #$FF
             sta VelocityY
@@ -177,9 +191,23 @@ handlekey:
             lda #$00
             sta VelocityY
             jmp keydone
+:           cmp #$CD            ; M (down, left)
+            bne :+
+            lda #$FF
+            sta VelocityX
+            lda #$01
+            sta VelocityY
+            jmp keydone
 :           cmp #$AC            ; , (down)
             bne :+
             lda #$00
+            sta VelocityX
+            lda #$01
+            sta VelocityY
+            jmp keydone
+:           cmp #$AE            ; . (down, right)
+            bne :+
+            lda #$01
             sta VelocityX
             lda #$01
             sta VelocityY
