@@ -65,7 +65,7 @@ NumLogs:    .byte   0                       ; number of logs on map
 ;           01- scroll page B to match page A (if they don't already match) (1 tick?)
 
 MoveDelay   = 4                             ; VBLs per game tick (3 seems about minimum possible)
-FlipTick    = 2                             ; Tick just after which the page flip happens.
+FlipTick    = 1                             ; Tick just after which the page flip happens.
 
 ; main game event loop
 
@@ -105,7 +105,7 @@ dotask:     lda #INLINEVAR
             bne :+
             lda #FlipTick
             cmp VBLTick
-            bcs eventloop
+            bne eventloop
             lda ShownPage
             eor #$01
             sta ShownPage

@@ -83,7 +83,7 @@
 ; If it does scroll, it will exit with carry set to indicate significant time elapsed.
 ; value for NeedScroll is: 0=stop, neg=map down/dec offset, pos=map up/inc offset
 
-fixscroll:  clc                 ; carry clear = both "scroll up" and "was quick"
+fixscroll:  clc                 ; carry clear = "scroll up"
 NeedScroll = *+1
             lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
             beq noscroll
@@ -93,7 +93,6 @@ scrolldn:   sec
 scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll)
             lda #$00
             sta NeedScroll      ; we no longer need a scroll
-            sec                 ; tell eventloop we took some time
 noscroll:   rts
 
 ; synchronize the scroll on the page we are not looking at with the scroll

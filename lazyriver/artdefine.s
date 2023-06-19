@@ -239,7 +239,7 @@ bgshiftd:   lda #(c__ * 16)     ; shift in a transparent pixel on the left
 bgspreadln: lda #(c__*16 + c__) ; two transparent pixels
             ldy #$03            ; make second 7 pixels transparent
 bgsprfill:  sta ZPixByteM, y
-            dex
+            dey
             bpl bgsprfill
             ldy #$03            ; move sprite into first 7 pixels
 CurrSprLn = *+1
@@ -303,6 +303,7 @@ bgmaskb:    lda ZPixByteM, y
             sta (ZPtrD), y
             ldy #$03            ; translate data for first half
 bgspra:     lda ZPixByteI, y
+            jsr zeroclear
             sta ZPixByteA, y
             dey
             bpl bgspra
@@ -319,6 +320,7 @@ bgspra:     lda ZPixByteI, y
             sta (ZPtrB), y
             ldy #$03            ; translate data for second half
 bgsprb:     lda ZPixByteM, y
+            jsr zeroclear
             sta ZPixByteA, y
             dey
             bpl bgsprb
@@ -336,11 +338,14 @@ bgsprb:     lda ZPixByteM, y
             rts
 
 ; convert a sensibly-encoded byte into a mask
-; color c__ -> 1111, others -> 0000
+; color c__ or c_x -> 1111, others -> 0000
+; allows for transparent and translucent pixels
 
 tomask:     pha
             and #$F0
             cmp #(c__ * 16)
+            beq :+
+            cmp #(c_x * 16)
             beq :+
             lda #$00
             beq :++
@@ -350,9 +355,37 @@ tomask:     pha
             and #$0F
             cmp #c__
             beq :+
+            cmp #c_x
+            beq :+
             lda #$00
             beq :++
 :           lda #$0F
+:           ora ZPxScratch
+            rts
+
+; convert a sensibly-encoded byte into a ORable byte
+; converting transparent pixels to 0000, translucent pixels to 0010
+; color c__ -> 0000, c_x -> 0010, others -> unchanged
+
+zeroclear:  pha
+            and #$F0
+            cmp #(c_x * 16)
+            bne :+
+            lda #%00010000
+            bne :++
+:           cmp #(c__ * 16)
+            bne :+
+            lda #$00
+:           sta ZPxScratch
+            pla
+            and #$0F
+            cmp #c_x
+            bne :+
+            lda #%00000001
+            bne :++
+:           cmp #c__
+            bne :+
+            lda #$00
 :           ora ZPxScratch
             rts
             
@@ -454,7 +487,8 @@ cYw = %1101     ; Yellow
 cAq = %1110     ; Aqua
 cWh = %1111     ; White
 
-c__ = cGY       ; mask color is Grey2
+c__ = cGY       ; transparent mask color is Grey2
+c_x = cGy       ; translucent mask color is Grey1
 
 ; graphics macro to tile 7 pixels into 4 bytes for easier editing/reading
 .macro  tile    arg1, arg2, arg3, arg4, arg5, arg6, arg7
@@ -471,9 +505,9 @@ MapTiles:
             tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
             tile    cGn, cGn, cGn, cPk, cGn, cYw, cGn
             tile    cGn, cGn, cGn, cGn, cYw, cYw, cYw
-            tile    cGn, cGn, cGn, cGn, cGn, cYw, cGn
-            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
-            tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
+            tile    cGn, cGn, cWh, cGn, cGn, cYw, cGn
+            tile    cGn, cWh, cWh, cWh, cGn, cGn, cGn
+            tile    cGn, cGn, cWh, cGn, cGn, cGn, cGn
 ; Land 2
             tile    cGn, cGn, cGn, cGn, cGn, cGn, cGn
             tile    cGn, cGn, cGn, cGN, cGn, cGn, cGn
@@ -551,10 +585,10 @@ Sprites:
             tile    c__, c__, c__, cPk, c__, c__, c__
             tile    c__, c__, cPk, cMg, cPk, c__, c__
             tile    c__, cPk, cMg, cMg, cMg, cPk, c__
-            tile    cPk, cMg, cMg, c__, cMg, cMg, cPk
-            tile    cPk, cMg, c__, c__, c__, cMg, cPk
-            tile    cPk, cMg, c__, c__, c__, cMg, cPk
-            tile    cPk, cOr, cMg, cMg, cMg, cMg, cPk
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cOr, cMg, cMg, cMg, cOr, cPk
             tile    c__, cPk, cPk, cPk, cPk, cPk, c__
 
 
