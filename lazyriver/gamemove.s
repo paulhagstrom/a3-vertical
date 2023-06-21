@@ -1,8 +1,7 @@
 ; lazyriver
 ; movement processing
 
-domove:     ; hero is stationary on screen, Y only moves map
-            lda ShownPage
+domove:     lda ShownPage
             eor #$01            ; focus on nondisplayed page (starts in sync with displayed)
             and #$01
             tax                 ; x is 0 if we are not looking at page 1, 1 if page 2
@@ -33,43 +32,48 @@ dmgndstay:
             bmi dmherovup       ; branch if hero moving up
             ; hero moving down
             lda PlayerY
-            cmp #183           ; are we as low as we can be?
+            clc
+            adc VelocityY
+            cmp #185            ; are we as low as we can be?
             bcs dmheronov       ; branch away if we can't move down
-            inc PlayerY         ; move down
+            sta PlayerY         ; move down
             bne dmheronov
             ; hero moving up
 dmherovup:  lda PlayerY
-            beq dmheronov       ; branch away if we can't move up
-            dec PlayerY         ; move up
+            clc
+            adc VelocityY
+            cmp #$09
+            bcc dmheronov       ; branch away if we can't move up
+            sta PlayerY         ; move up
             ; check horizontal movement
 dmheronov:  lda VelocityX
             beq dmheronoh       ; branch if not moving horizontally
             bmi dmheroleft      ; branch if hero moving left
             ; hero moving right
-            lda PlayerX
-            cmp #18
-            bcc dmherorok       ; at least a tile away from the edge, ok
             lda PlayerXOff
-            cmp #$06
-            beq dmheronoh       ; branch if we can't move right
-dmherorok:  inc PlayerXOff
-            lda PlayerXOff
+            clc
+            adc VelocityX
             cmp #$07
-            bcc :+
-            lda #$00
-            sta PlayerXOff
+            bcc dmherorok
+            sec
+            sbc #$07
+            ldy PlayerX
+            cpy #18
+            bcs dmheronoh
             inc PlayerX
-:           jmp dmheronoh
+dmherorok:  sta PlayerXOff
+            jmp dmheronoh
             ; hero moving left
-dmheroleft: lda PlayerX
-            bne dmherolok
-            lda PlayerXOff
-            beq dmheronoh       ; branch if we can't move left
-dmherolok:  dec PlayerXOff
-            bpl dmheronoh
-            lda #$06
-            sta PlayerXOff
+dmheroleft: lda PlayerXOff
+            clc
+            adc VelocityX
+            bpl dmherolok
+            clc
+            adc #$07
+            ldy PlayerX
+            beq dmheronoh
             dec PlayerX
+dmherolok:  sta PlayerXOff
 dmheronoh:
             ; TODO - check for collision
             ; RODO - move logs

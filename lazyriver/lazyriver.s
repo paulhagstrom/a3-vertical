@@ -149,70 +149,75 @@ IRQSaveC = *+1
 
 ; process keypress
 
-handlekey:  
+handlekey:  tay
+KeyFlag = *+1
+            lda #INLINEVAR
+            and #$02            ; shift key down
+            sta KeyFlag         ; just make it nonzero for shift, for BIT+BNE
+            tya
             cmp #$C9            ; I (up)
-            bne :+
-            lda #$00
-            sta VelocityX
-            lda #$FF
+            bne :+++
+            lda VelocityY
+            sec
+            sbc #$01
+            tay
+            sec
+            sbc #<-3
+            bvc :+
+            eor #$80
+:           bmi :+
+            tya
             sta VelocityY
-            jmp keydone
-:           cmp #$D5            ; U (up, left)
-            bne :+
-            lda #$FF
-            sta VelocityX
-            lda #$FF
+:           jmp keydone
+:           cmp #$AC            ; , (down)
+            bne :+++
+            lda VelocityY
+            clc
+            adc #$01
+            tay
+            sec
+            sbc #$04
+            bvc :+
+            eor #$80
+:           bpl :+
+            tya
             sta VelocityY
-            jmp keydone
-:           cmp #$CF            ; O (up, right)
-            bne :+
-            lda #$01
-            sta VelocityX
-            lda #$FF
-            sta VelocityY
-            jmp keydone
+:           jmp keydone
 :           cmp #$CA            ; J (left)
-            bne :+
-            lda #$FF
+            bne :+++
+            lda VelocityX
+            sec
+            sbc #$01
+            tay
+            sec
+            sbc #<-3
+            bvc :+
+            eor #$80
+:           bmi :+
+            tya
             sta VelocityX
-            lda #$00
-            sta VelocityY
-            jmp keydone
+:           jmp keydone
+:           cmp #$CC            ; L (right)
+            bne :+++
+            lda VelocityX
+            clc
+            adc #$01
+            tay
+            sec
+            sbc #$04
+            bvc :+
+            eor #$80
+:           bpl :+
+            tya
+            sta VelocityX
+:           jmp keydone
 :           cmp #$CB            ; K (stop)
             bne :+
             lda #$00
             sta VelocityX
             sta VelocityY
             jmp keydone
-:           cmp #$CC            ; L (right)
-            bne :+
-            lda #$01
-            sta VelocityX
-            lda #$00
-            sta VelocityY
-            jmp keydone
-:           cmp #$CD            ; M (down, left)
-            bne :+
-            lda #$FF
-            sta VelocityX
-            lda #$01
-            sta VelocityY
-            jmp keydone
-:           cmp #$AC            ; , (down)
-            bne :+
-            lda #$00
-            sta VelocityX
-            lda #$01
-            sta VelocityY
-            jmp keydone
-:           cmp #$AE            ; . (down, right)
-            bne :+
-            lda #$01
-            sta VelocityX
-            lda #$01
-            sta VelocityY
-            jmp keydone
-:           cmp #$D1            ; Q (ground stop)
+:           cmp #$C1            ; A (ground stop)
             bne :+
             lda #$00
             sta GroundVel
@@ -222,7 +227,7 @@ handlekey:
             lda #$01
             sta GroundVel
             jmp keydone
-:           cmp #$C1            ; A (up, scroll ground down)
+:           cmp #$D1            ; Q (up, scroll ground down)
             bne :+
             lda #$FF
             sta GroundVel

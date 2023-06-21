@@ -72,6 +72,8 @@ intvbl:     sta D_NOMIX         ;4 set screen to Apple III color text mode for a
 ; 21 cycles to get here, 28 cycles in here [49 total]
 intkey:     lda IO_KEY          ;4 load keyboard register
             sta KeyCaught       ;4 tell event loop to process this - in event loop code
+            lda IO_KEYFLAG      
+            sta KeyFlag
             bit IO_KEYCLEAR     ;4 clear keyboard register
             lda #$01            ;2 clear the keyboard (CA2) interrupt
             sta RE_INTFLAG      ;4
