@@ -45,19 +45,23 @@
 ; 8-line HBL group triggers about 32 times per refresh cycle (including those during VBL)
 ; so we're looking at max audio sampling around 2KHz.
 
+; for reasons I do not understand, real hardware paints the first line in hires
+; before switching to text.  It is almost as if VBL is firing as the screen *begins* painting,
+; is that possible?  Surely not.
+;
 ; VBL handler
 ; 29 cycles to get here, 50 cycles in here [79 total]
-intvbl:     lda #$06            ;2 reset the HBL counter for switch to a3 hires mode
-            sta RE_T2CL         ;4 (starts counting after VBL is over, so no rush)
-            lda #$00            ;2
-            sta RE_T2CH         ;4 
-            sta D_NOMIX         ;4 set screen to Apple III color text mode for after VBL
+intvbl:     sta D_NOMIX         ;4 set screen to Apple III color text mode for after VBL
             sta D_LORES         ;4
             sta D_PAGEONE       ;4 only page 1 makes sense for A3 color text
             sta D_SCROLLOFF     ;4 MAME bug requires us to turn this off for text
             ;sta D_TEXT         ; don't need to hit this switch because it does not change
             lda #$10            ;2 clear the VBL (CB1) interrupt
             sta RE_INTFLAG      ;4
+            lda #$06            ;2 reset the HBL counter for switch to a3 hires mode
+            sta RE_T2CL         ;4 (starts counting after VBL is over, so no rush)
+            lda #$00            ;2
+            sta RE_T2CH         ;4 
             dec VBLTick         ;6 bump VBL countdown - in event loop code
             pla                 ;4
             rti                 ;6
@@ -99,14 +103,27 @@ nothbl:     lda RE_INTFLAG      ;4 check for other interrupts
 ; non-HBL branches to up above.
 ; here: HBL is going to be the split between top text mode (8 lines) and rest of a3 hires mode
 ; so should only be one HBL per screen refresh.
+; we are actually firing the HBL early, we need to stall maybe 10 cycles to get into the next
+; HBL.
 
 inthandle:  pha                 ;3 stash A because we need it
             lda RE_INTFLAG      ;4 identify the interrupt we got
             and #$20            ;2 [9] is it HBL?
             beq nothbl          ;2/3 branch+jump off to the rest of the interrupt handlers if not
             ; this is the HBL interrupt, and we've burned 11 cycles already, took 7 minimum to start.
-            sta D_MIX           ;4 switch to a3 hires mode
-            sta D_HIRES         ;4 [19]
+            ; stall a little, I had to do this to keep it from switching in the middle
+            ; of the last line of text on real hardware -- in MAME it was fine without these
+            nop
+            nop
+            nop
+            nop
+            nop
+            nop
+            nop
+            nop
+            nop
+            sta D_HIRES         ;4 switch to a3 hires mode
+            sta D_MIX           ;4 [19] 
 ShownPage = *+1                 ; set this to either $54 (page 1) or $55 (page 2)
             sta D_PAGEONE       ;4 [23]            
             ;sta D_TEXT         ; no need to hit this switch because it does not change
@@ -310,7 +327,17 @@ setupenv:   ; save IRQ vector and then install ours
             ; CA2     001- lo nibble independent interrupt input neg edge (keyboard)
             ; CA1     ---0 lo nibble neg active edge (clock)
             lda #%01100010
+            ; none below helps the drawing of a single hires line at the top on real hw
+            ; so: CB2 bits at the top have no effect
+            ;lda #%11100010
+            ;lda #%11000010
+            ;lda #%00000010
+            ;lda #%01000010
             ;lda #%00100010 ; neg active edge?  CB2 may be VBLx8.
+            ; both of the ones below result in not even switching into text mode at all
+            ; so CB1 bit probably is setting it to fire at the end of VBL.
+            ;lda #%00110010 ; neg active edge?  CB2 may be VBLx8.
+            ;lda #%01110010 ; neg active edge?  CB2 may be VBLx8.
             sta RE_PERCTL
             
             ; E-VIA Int Enable
