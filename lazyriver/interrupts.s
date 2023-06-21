@@ -61,7 +61,9 @@ intvbl:     sta D_NOMIX         ;4 set screen to Apple III color text mode for a
             lda #$06            ;2 reset the HBL counter for switch to a3 hires mode
             sta RE_T2CL         ;4 (starts counting after VBL is over, so no rush)
             lda #$00            ;2
-            sta RE_T2CH         ;4 
+            sta RE_T2CH         ;4
+            lda #$01
+            sta HBLatTop 
             dec VBLTick         ;6 bump VBL countdown - in event loop code
             pla                 ;4
             rti                 ;6
@@ -113,15 +115,23 @@ inthandle:  pha                 ;3 stash A because we need it
             ; this is the HBL interrupt, and we've burned 11 cycles already, took 7 minimum to start.
             ; stall a little, I had to do this to keep it from switching in the middle
             ; of the last line of text on real hardware -- in MAME it was fine without these
-            nop
-            nop
-            nop
-            nop
-            nop
-            nop
-            nop
-            nop
-            nop
+HBLatTop = *+1
+            lda #INLINEVAR
+            beq endhbl
+            lda #183            ;2 reset the HBL counter for the very end of the screen
+            sta RE_T2CL         ;4
+            lda #$00            ;2
+            sta RE_T2CH         ;4 
+            sta HBLatTop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
+            ;nop
             sta D_HIRES         ;4 switch to a3 hires mode
             sta D_MIX           ;4 [19] 
 ShownPage = *+1                 ; set this to either $54 (page 1) or $55 (page 2)
@@ -132,6 +142,23 @@ ShownPage = *+1                 ; set this to either $54 (page 1) or $55 (page 2
 clockout:   pla                 ;4 [35]
             rti                 ;6 [done with HBL after 41]
 
+endhbl:     nop
+            nop
+            nop
+            nop
+            nop
+            sta D_NOMIX         ;4 set screen to Apple III color text mode for after VBL
+            sta D_LORES         ;4
+            sta D_PAGEONE       ;4 only page 1 makes sense for A3 color text
+            sta D_SCROLLOFF     ;4 MAME bug requires us to turn this off for text
+            lda #$06            ;2 reset the HBL counter for switch to a3 hires mode
+            sta RE_T2CL         ;4 (starts counting after VBL is over, so no rush)
+            lda #$00            ;2
+            sta RE_T2CH         ;4
+            lda #$01
+            sta HBLatTop
+            bne clockout
+            
 ; timer1 interrupt handler, to handle audio
 ; skipped for simplicity, maybe add in later.
 ; 25 cycles to get here
