@@ -4,11 +4,24 @@
 ; in the code for cycle counting and addressing mode options.
 ; collecting the definitions in here in order to avoid inadvertent collisions
 
+; overall memory map:
+; $400-427      text of scoreline at the top
+; $2000-9FFF    graphics buffers, page 1A, 1B, 2A, 2B (bank 0)
+; $A000->       game code
+; bank 1:
+; $0000-13FF    map data (tiles, flow) (256 rows, 20 columns)
+; $1400-14FF    tile graphic data (8 tiles, 8 lines)
+; $1500-7EFF    sprite graphic data (2 frames, 7 shifts, 8 lines, 15 sprites, $700 per)
+; bank 2:
+; $300-AFF      sprite tracking variables, groups of $80
+; $1000-4FFF    sprite background caches ($1000 page 1, $3000 page 2)
+; $5000-7EFF    sound effect data ($100 per effect) (planned)
+
 XByte       = $1601     ; Interp extended address offset (for ZP 1A)
-Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
+;Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
 INLINEVAR   = $33       ; mnemonic to remind me where variable is inline in code
 INLINEADDR  = $2020     ; mnemonic to remind me where variable is inline in code
-Zero        = $00
+;Zero        = $00
 
 ; Used in interpreter (1A00) ZP.
 
@@ -20,40 +33,51 @@ ZCurrOff    = $17   ; current offset into tile (used in paintmap)
 ZCurrMapL   = $18   ; current map line (used in paintmap)
 ZLinesLeft  = $19   ; lines remaining to draw (used in paintmap)
 
+ZPgIndex    = $1A   ; nondisplayed page (0 if page 1 nondisplayed, or 1, used in sprites)
+ZScrOffset  = $1B   ; PgOneOff for drawing page (used in sprites)
+ZScrX       = $1C   ; byte to draw sprite on, twice x-coordinate (sprites)
+ZScrTop     = $1D   ; map row of the top line of the display (sprites)
+;ZSpriteOff  = $1A   ; used in sprites, difference between sprite and page offset
+;ZMapTemp    = $1B   ; temporary storage for a map byte being tested for collision
+;ZXXTemp     = $1C   ; temporary storage for second segment x-coordinate
+;ZFrame      = $1D   ; temporary storage for current animation frame
+
 ; scratch pointers
-ZPtrA       = $20
-ZPtrB       = $22
-ZPtrC       = $24
-ZPtrD       = $26
-ZPtrE       = $28
-ZPtrF       = $2A
-ZPtrG       = $2C
-ZPtrH       = $2E
+ZPtrA       = $1E
+ZPtrSprA    = $20
+ZPtrSprB    = $22
+ZPtrMaskA   = $24
+ZPtrMaskB   = $26
+ZPtrScrA    = $28
+ZPtrScrB    = $2A
+ZPtrCacheA  = $2C
+ZPtrCacheB  = $2E
 
-; game state variables
-; so far not really used
-ZLogX       = $30   ; pointer to log X coordinates data
-ZLogY       = $32   ; pointer to log Y coordinates data
-ZLogXV      = $34   ; pointer to log X velocity data
-ZLogYV      = $36   ; pointer to log Y velocity data
-ZLogType    = $38   ; pointer to log type data
-ZLogTick    = $3A   ; pointer to log tick data
-ZLogAnim    = $3C   ; pointer to log current frame data
-ZLogPeriod  = $3E   ; pointer to log tick period data
-ZLogSp      = $40   ; pointer to log speed, maybe redundant. Ticks per move.
-
-ZSpriteOff  = $4C   ; used in sprites, difference between sprite and page offset
-
-ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collision
-ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
-ZFrame      = $4F   ; temporary storage for current animation frame
+; sprite variables
+ZSprX       = $30   ; pointer to sprite X coordinates data
+ZSprY       = $32   ; pointer to sprite Y coordinates data
+ZSprXOff    = $34   ; pointer to sprite X coordinates offset data
+ZSprYOff    = $36   ; pointer to sprite Y coordinates offset data
+ZSprXV      = $38   ; pointer to sprite X velocity data
+ZSprYV      = $3A   ; pointer to sprite Y velocity data
+ZSprType    = $3C   ; pointer to sprite type data
+ZSprTick    = $3E   ; pointer to sprite tick data
+ZSprAnim    = $40   ; pointer to sprite current frame data
+ZSprPeriod  = $42   ; pointer to sprite tick period data
+ZSprDrX     = $44   ; pointer to X byte sprite drawn in (or minus if not drawn)
+ZSprDrY     = $46   ; pointer to Y raster sprite drawn in
+ZSprBgL     = $48   ; pointer to low byte of pointer to sprite cached background
+ZSprBgH     = $4A   ; pointer to high byte of pointer to sprite cached background
+ZSprSprH    = $4C   ; pointer to high byte of sprite data (correlates with ZSprType)
 
 ; pointers used during movement processing
-ZOldPtr     = $50   ; original position of element moving
-ZNewPtr     = $52   ; new position of element moving
-ZTailPtr    = $54   ; original position of second segment of element moving (hoarder)
+;ZOldPtr     = $50   ; original position of element moving
+;ZNewPtr     = $52   ; new position of element moving
 ; variables used during movement processing
-ZCurrLog    = $56   ; current log being processed
+ZMapTmp     = $56   ; map byte
+ZCurrSpr    = $56   ; current sprite being processed
+ZYFlow      = $57   ; map y flow
+ZXFlow      = $58   ; map x flow
 
 ZOldX       = $59   ; original premovement X
 ZOldY       = $5A   ; original premovement Y

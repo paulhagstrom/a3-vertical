@@ -285,6 +285,22 @@ postnudge:  rts
 ; TwelveBran is a table of multiples of $0C, used as a branch table when setting smooth scroll
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
+; set up the pointers to go to the correct banks so we can just presume they are set.
+
+setmemory:  lda #$81                    ; bank 1
+            sta ZMapPtr + XByte         ; map is in bank 1 (buildmap, mapscroll)
+            sta ZPtrSprA + XByte        ; sprite data are in bank 1 (artdefine, sprite)
+            sta ZPtrSprB + XByte        ; sprite data are in bank 1 (artdefine, sprite)
+            sta ZPtrMaskA + XByte       ; sprite masks are in bank 1 (artdefine, sprite)
+            sta ZPtrMaskB + XByte       ; sprite masks are in bank 1 (artdefine, sprite)
+            lda #$82                    ; bank 2
+            sta ZPtrCacheA + XByte      ; background cache A (sprite)
+            sta ZPtrCacheB + XByte      ; background cache B (sprite)
+            lda #$80                    ; bank 0
+            sta ZPtrScrA + XByte        ; graphics A (e.g., 0000-1FFF)
+            sta ZPtrScrB + XByte        ; graphics B (e.g., 2000-3FFF)
+            rts
+            
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
@@ -307,7 +323,8 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     ------1- ROM#1                (0=ROM#2)
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
-            sta R_ENVIRON            
+            sta R_ENVIRON
+            jsr setmemory       ; set up pointers
             jsr seedRandom      ; seed the "random" number list
             jsr buildmap        ; set up map data (in bank 1)
             jsr buildgfx        ; define graphics assets
@@ -333,7 +350,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
-            lda #$01            ; number of logs, this ought to be level-dependent
+            lda #$01            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to

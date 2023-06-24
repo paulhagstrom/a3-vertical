@@ -5,15 +5,32 @@
 ; map has 256 tiles down, build from the bottom up
 ; (since it starts wide and will probably get narrow further on)
 
-; Map data and element tracking variables are in bank 1
-; Map data lives from $0000-1400.
-; Element tracking variables are from $300-AFF.
-
+; Map data and tile and sprite graphics data are in bank 1
+; Element tracking variables and background caches are in bank 2
+; Map data lives from $0000-13FF (bank 1)
+; Tile data from $1400-14FF (bank 1)
+; Sprite data from $1500-7EFF (bank 1)
+; Element tracking variables from $300-AFF (bank 2)
+; Sprite background cache data from $1000-4FFF (bank 2)
+; have space for 128 sprite caches, needs 64 bytes per sprite, one per page
+; Sound effect data from $5000-7EFF (bank 2)
+; In the map:
 ; Each byte represents a 7x8 tile (screen tiles 20x24)
 ; Each line fills the screen, but not more, so there are 20 tiles across.
 ; With 256 lines, this means we have 5120 ($1400) bytes.
 
-; TODO - later compute a flow vector so that speed is prortional to width
+; Map byte holds flow vector and tile type
+; tile type (3 bits) is one of 8 (four water, four land)
+; y velocity (2 bits) is always one direction, four speeds including stopped, 
+; x velocity (3 bits) can be either left or right, -3 to +3
+; 8     7   6     5     4       3 2 1
+; -------   -------------       -----
+; yvel      xvel                tile type
+; 00=land   111=left slow -1    000 = water 1
+; 01=slow   101=left fast -3    011 = water 4
+; 10=med    001=right slow +1   100 = land 1
+; 11=fast   011=right fast +3   111 = land 4
+;
 ; TODO - consider maybe adding depth as well
 
 TileLand:   .byte   C_LAND_A, C_LAND_B, C_LAND_C, C_LAND_D
@@ -22,7 +39,10 @@ ShoreL:     .byte 0         ; current tile X-coordinate of left shore
 ShoreR:     .byte 0         ; current tile X-coordinate of right shore
 ShoreLV:    .byte 0         ; left shoreline velocity
 ShoreRV:    .byte 0         ; right shoreline velocity
+ProxL:      .byte 0         ; tile at which we are 2 from left shore
+ProxR:      .byte 0         ; countdown to 2 from right shore
 MapLine:    .byte 0         ; current map line being built
+LogsLeft:   .byte 0         ; logs left to place
 
 buildmap:   
             ; fill in the map start address lookup table
@@ -61,15 +81,19 @@ bmidxdone:
             lda #$00        ; start shore velocity at 0 (straight up)
             sta ShoreLV
             sta ShoreRV
-            lda #$81        ; put ZPtrA in bank 1
-            sta ZPtrA + XByte
             ; fill the current line
             ; Y will (still) hold MapLine (0) at the beginning
-bmmapline:  sty MapLine     ; put map line base address in ZPtrA
+bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             lda MapLineH, y
-            sta ZPtrA + 1
+            sta ZMapPtr + 1
             lda MapLineL, y
-            sta ZPtrA
+            sta ZMapPtr
+            lda #$02
+            sta ProxR
+            lda ShoreL
+            clc
+            adc #$03
+            sta ProxL
             ldy #$13        ; right to left, start at last tile in the line
 bmscan:     ldx Seed        ; pick a random tile of four options
             inc Seed
@@ -82,16 +106,46 @@ bmscan:     ldx Seed        ; pick a random tile of four options
             bcc bmnotwat        ; yes (inland), branch
             beq bmnotwat        ; yes (coast), branch
             lda TileWater, x    ; otherwise, we're in the water
+            sta ZPxScratch
+            dec ProxR           ; are we within 2 tiles of the right shore?
+            bmi :+              ; branch away if we're further from the right shore
+            lda ShoreRV         ; put right shore volecity in x flow velocity
+            asl
+            asl
+            asl
+            and #%00111000
+            ora ZPxScratch
+            jmp bmxflow
+:           cmp ProxL           ; are we within 2 tiles of the left shore?
+            bcs bmyflow         ; branch away if we're further away from left shore
+            lda ShoreLV         ; put left shore velocity in x flow velocity
+            asl
+            asl
+            asl
+            and #%00111000
+            ora ZPxScratch
+bmxflow:    sta ZPxScratch
+bmyflow:    lda ShoreR          ; work out y flow speed
+            sec                 ; depends on width of water
+            sbc ShoreL
+            cmp #$08            ; narrow, fast water
+            bcs :+
+            lda #%11000000      ; 3 is fast
+            bne bmyfloww        ; branch always
+:           cmp #$0E            ; middle width, speedy water
+            bcs :+
+            lda #%10000000      ; 2 is speedy but not fast
+            bne bmyfloww        ; branch always
+:           lda #%01000000      ; 1 is slowish speed
+bmyfloww:   ora ZPxScratch
             jmp bmstore
 bmnotwat:   lda TileLand, x
-bmstore:    sta (ZPtrA), y
+bmstore:    sta (ZMapPtr), y
             dey
             bpl bmscan
             ; make the shoreline wander
             ; check to see if we're already narrow
-            lda ShoreR
-            sec
-            sbc ShoreL
+            pla
             cmp #$06        ; if shore edges are at least 6 tiles apart, wander
             bcs bmlwander
             lda #<-1        ; otherwise set shore velocity to diverge (widen)
@@ -125,11 +179,209 @@ bmlok:      sta ShoreL
             lda #19         ; keep the shore on the right edge of the screen
 bmrok:      sta ShoreR
             ldy MapLine
-            beq bmdone      ; branch away if we have done 256 map lines
+            beq bmlogs      ; branch away if we have done 256 map lines
             dey
             jmp bmmapline   ; otherwise go do the next one
             ; the shores are now done
+            ; now place logs
+bmlogs:
+            ; Start by initializing memory pointers for sprite tracking.
+            ; main game elements are logs, of which there is capacity for 128
+            ; LogX = 300, LogY = 380, LogYOff = 400, LogXV = 480, LogYV = 500
+            ; LogType = 580, LogTick = 600, LogAnim = 680, LogPeriod = 700
+            ; LogDrX = 780, LogDrY = 800,
+            ; LogBgAOne = 880, LogBgBOne = 900
+            ; LogBgATwo = 980, LogBgBTwo = A00
+            ; 
+            lda #$00
+            ldx #$03
+            sta ZSprX
+            stx ZSprX + 1
+            eor #$80
+            sta ZSprY
+            stx ZSprY + 1
+            eor #$80
+            inx
+            sta ZSprXOff
+            stx ZSprXOff + 1
+            eor #$80
+            inx
+            sta ZSprYOff
+            stx ZSprYOff + 1
+            eor #$80
+            inx
+            sta ZSprXV
+            stx ZSprXV + 1
+            eor #$80
+            inx
+            sta ZSprYV
+            stx ZSprYV + 1
+            eor #$80
+            inx
+            sta ZSprType
+            stx ZSprType + 1
+            eor #$80
+            inx
+            sta ZSprTick
+            stx ZSprTick + 1
+            eor #$80
+            inx
+            sta ZSprAnim
+            stx ZSprAnim + 1
+            eor #$80
+            inx
+            sta ZSprPeriod
+            stx ZSprPeriod + 1
+            eor #$80
+            inx
+            sta ZSprDrX
+            stx ZSprDrX + 1
+            eor #$80
+            inx
+            sta ZSprDrY
+            stx ZSprDrY + 1
+            eor #$80
+            inx
+            sta ZSprBgL
+            stx ZSprBgL + 1
+            eor #$80
+            inx
+            sta ZSprBgH
+            stx ZSprBgH + 1
+            eor #$80
+            inx
+            sta ZSprSprH
+            stx ZSprSprH + 1
+            lda #$82        ; bank 2
+            sta ZSprX + XByte
+            sta ZSprY + XByte
+            sta ZSprXOff + XByte
+            sta ZSprYOff + XByte
+            sta ZSprXV + XByte
+            sta ZSprYV + XByte
+            sta ZSprType + XByte
+            sta ZSprTick + XByte
+            sta ZSprAnim + XByte
+            sta ZSprDrX + XByte
+            sta ZSprDrY + XByte
+            sta ZSprBgL + XByte
+            sta ZSprBgH + XByte
+            sta ZSprSprH + XByte
+            
+            ; place some logs
+            lda NumLogs
+            sta LogsLeft
+            
+placelog:   ldy Seed                ; pick a map row
+            inc Seed
+            lda Random, y
+            and #%00011111          ; in the last 32 rows
+            clc
+            adc #223
+            tax
+            lda MapLineL, x
+            sta ZMapPtr
+            lda MapLineH, x
+            sta ZMapPtr + 1
+            ldy Seed                ; pick an x-coordinate
+            inc Seed
+            lda Random, y
+            and #%00001111          ; between 2 and 17
+            clc
+            adc #$02
+            tay
+:           lda (ZMapPtr), y
+            and #%00001000          ; is it water?
+            bne :+                  ; branch away if it is water
+            dey                     ; search this row to the left to find water
+            bpl :-
+            bmi placelog            ; go pick a different spot
+:           tya
+            ldy LogsLeft
+            sta (ZSprX), y
+            txa
+            sta (ZSprY), y
+            ldx Seed                ; pick a start frame
+            inc Seed
+            lda Random, x
+            and #$01                ; between 1 and 2
+            sta (ZSprAnim), y
+            inx                     ; pick a animation period
+            inc Seed
+            lda Random, x
+            and #$03                ; between 1 and 4
+            sta (ZSprPeriod), y
+            inx                     ; pick a log type
+            inc Seed
+            lda Random, x
+            and #$03                ; between 1 and 4
+            sta (ZSprType), y
+            jsr sprfinish           ; fill in the rest of the easy variables
+            
+            dec LogsLeft
+            bmi bmlogsdone
+            jmp placelog
+            
+            ; we should now have placed NumLogs logs
+            ; TODO - maybe try to keep them from landing on top of one another
+
+            ; place the player
+bmlogsdone: ldy #127                ; player is "log" 127
+            lda #10                 ; in the middle
+            sta (ZSprX), y
+            lda #240                ; near the bottom of the map
+            sta (ZSprY), y
+            lda #02                 ; animate every 3 frames
+            sta (ZSprPeriod), y
+            lda #$00                ; start on frame 0
+            sta (ZSprAnim), y
+            lda #S_PLAYER           ; sprite type
+            sta (ZSprType), y
+            jsr sprfinish           ; fill in the rest of the easy variables
+            
+            ; now done placing logs and player
+            
+
+            ; TODO - and add collision detection that can stop a log if it hits something.
+            ; TODO - idea would be that touching something (bank, log, player)
+            ; TODO - induces friction.  Player can bang into a log.
 bmdone:     rts
+
+; finish the sprite after most of the definition was filled in
+; sets SprH, zeros XV, YV ,YOff, Tick, marks as undrawn, computes BgL/H
+; common code between logs and player
+; enter with A being the sprite type (already stored), and y being the sprite number
+sprfinish:
+            asl
+            asl
+            asl                     ; x 8
+            sec
+            sbc (ZSprType), y       ; minus log type ( = x 7)
+            clc
+            adc #$15                ; sprite data starts at $1500.
+            sta (ZSprSprH), y
+            lda #$00
+            sta (ZSprXV), y
+            sta (ZSprYV), y
+            sta (ZSprXOff), y
+            sta (ZSprYOff), y
+            sta (ZSprTick), y
+            lda #$FF
+            sta (ZSprDrX), y        ; mark as undrawn
+            ; compute cache address
+            tya
+            and #$03                ; sprite number mod 4
+            lsr
+            ror
+            ror                     ; x $40 (low byte of cache address)
+            sta (ZSprBgL), y
+            tya
+            lsr
+            lsr                     ; int( sprite number / 4 )
+            clc
+            adc #$10                
+            sta (ZSprBgH), y        ; high byte of A page 1, e.g., $10
+            rts
 
 ; wander a shoreline - velocity in Y, returns in Y
 bmwander:   ; constrain velocity -- if it is 2 pull back to 1, either direction

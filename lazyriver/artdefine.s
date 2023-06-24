@@ -7,45 +7,40 @@
 ; Map occupies $0000-$13FF
 ; Map tile graphics: $1400-14FF (8 tile types)
 ; Each map tile is 7x8 = 32 bytes.
-; 8 map tiles = $100 bytes, so should end at $14FF.
-; each sprite is 64 bytes of data (2 tiles wide) and 64 bytes of mask
-; allowing for 30 sprites between $1500-$7EFF
+; Sprites: 2 tiles wide, 64 bytes of data, 64 bytes of mask, 7 shifts.  $700 bytes.
+; Odd sprites at pages: 15, 1C, 23, 2A, 31, 38, 3F, 46, 4D, 54, 5B, 62, 69, 70, 77.
+; That leaves room for 30 sprites between $1500-7EFF.
+; Animated with 2 frames each leaves room for 15
 ; optimizing for drawing, masks, data, B bytes, and A bytes will all
 ; be separated so that they can be referred to by the same index.
-; $1500 - sprite 1 shift 0 line 1 4 A bytes
-; $1504 - sprite 1 shift 0 line 2 4 A bytes
+; $1500 - sprite 1A shift 0 line 1 4 A bytes
+; $1504 - sprite 1A shift 0 line 2 4 A bytes
 ; ...
-; $1518 - sprite 1 shift 0 line 8 4 A bytes
-; $1520 - sprite 1 shift 0 line 1 4 B bytes
+; $1518 - sprite 1A shift 0 line 8 4 A bytes
+; $1520 - sprite 1A shift 0 line 1 4 B bytes
 ; ...
-; $1538 - sprite 1 shift 0 line 8 4 B bytes
-; $1540 - sprite 1 shift 0 line 1 4 A mask bytes
+; $1538 - sprite 1A shift 0 line 8 4 B bytes
+; $1540 - sprite 1A shift 0 line 1 4 A mask bytes
 ; ...
-; $1560 - sprite 1 shift 0 line 1 4 B mask bytes
+; $1560 - sprite 1A shift 0 line 1 4 B mask bytes
 ; ...
-; $1580 - sprite 2 shift 0 line 1 4 A bytes
+; $1580 - sprite 1B shift 0 line 1 4 A bytes
 ; ...
-; $15F8 - sprite 2 shift 0 line 8 4 B mask bytes
-; $1600 - sprite 1 shift 1 line 1 4 A bytes
+; $15F8 - sprite 1B shift 0 line 8 4 B mask bytes
+; $1600 - sprite 1A shift 1 line 1 4 A bytes
 ; ...
-; $16F8 - sprite 2 shift 1 line 8 4 B mask bytes
-; $1700 - sprite 1 shift 2 line 1 4 A bytes
+; $16F8 - sprite 1B shift 1 line 8 4 B mask bytes
+; $1700 - sprite 1B shift 2 line 1 4 A bytes
 ; ...
-; $1BF8 - sprite 2 shift 6 line 8 4 B mask bytes
-; $1C00 - sprite 3 shift 0 line 1 4 A bytes
+; $1BF8 - sprite 1B shift 6 line 8 4 B mask bytes
+; $1C00 - sprite 2A shift 0 line 1 4 A bytes
 ; ...
-; $22F8 - sprite 4 shift 6 line 8 4 B mask bytes
+; $22F8 - sprite 2B shift 6 line 8 4 B mask bytes
 ; that is;
-; sprite 1 is in first $80, sprite 2 is in second $80 of a page
+; sprite 1A is in first $80, sprite 1B is in second $80 of a page
 ; A data is from $00-1F, B data is from $20-3F
 ; A mask is from $40-5F, B mask is from $60-7F
 ; shift increases base address by $100
-; full 7 shifts of 2 sprites fit in $700 bytes ($1500...$1C00)
-; odd sprites start at pages:
-; $15, $1C, $23, $2A, $31, $38, $3F, $46, $4D, $54, $5B, $62, $69, $70, $77
-; we have room for 30 sprites, should we wish to use them.
-; or 15 sprites with two animation variants
-; or 10 sprites with three animation variants
 
 ; tile names
 
@@ -57,6 +52,10 @@ C_WATER_A   = $04         ; water type 1
 C_WATER_B   = $05         ; water type 2
 C_WATER_C   = $06         ; water type 3
 C_WATER_D   = $07         ; water type 4
+
+; sprite names
+
+S_PLAYER    = $08
 
 ; a slightly more intuitive way to look at this, with the
 ; pixels backwards but the bits in the right order
@@ -84,12 +83,11 @@ buildgfx:   jsr buildtiles      ; transform the tile graphics
             rts
 
 ; build the tile graphics
+; note that ZPtrSprA has been set to bank 1 in setmemory
 buildtiles: lda #$14            ; start map tiles at $1400
-            sta ZPtrA + 1
-            ldy #$81            ; bank 1
-            sty ZPtrA + XByte
+            sta ZPtrSprA + 1
             ldy #$00
-            sty ZPtrA
+            sty ZPtrSprA
 bgtile:     tya
             pha                 ; stash start index of tile line
             ; store definition line in ZPixByteA-ZpixByteD
@@ -108,30 +106,26 @@ bgtile:     tya
             pla                 ; restore start index of tile line
             tay
             lda ZPixByteE
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             iny
             lda ZPixByteF
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             iny
             lda ZPixByteG
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             iny
             lda ZPixByteH
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             iny                 ; move to next tile line
             bne bgtile          ; assumes exactly 8 tiles
             rts
 
-; transform the sprite graphics            
+; transform the sprite graphics   
+; note that ZPtrSprA has been set to bank 1 in setmemory         
 buildsprs:  lda #$15            ; start sprite data at $1500
-            sta ZPtrA + 1
+            sta ZPtrSprA + 1
             lda #$00            ; page A bytes
-            sta ZPtrA
-            lda #$81            ; bank 1 for all four pointers we will use
-            sta ZPtrA + XByte
-            sta ZPtrB + XByte
-            sta ZPtrC + XByte
-            sta ZPtrD + XByte
+            sta ZPtrSprA
             lda #NumSprites     ; number of sprites to transform
             sta ZSprLeft
             lda #>Sprites
@@ -147,7 +141,7 @@ bgsprline:  jsr bgwrshift       ; write masks/data for this sprite line, this sh
             dec ZShiftsLeft
             beq bgsprldone      ; branch if all shifts done
             ; advance pointer to next shift, this sprite, this line (ahead $100)
-            inc ZPtrA + 1
+            inc ZPtrSprA + 1
             jsr bgshift         ; shift pixels in the workspace to the right
             jmp bgsprline
             ; we have done all shifts and masks for this sprite, one line
@@ -162,14 +156,14 @@ bgsprldone: lda CurrSprLn       ; advance pointer into sprite definition
             beq bgsprdone       ; branch away if all lines are done
             ; ZPtr is just beyond the end of the sprite line data block
             ; next line is 6 pages back, 4 bytes forward
-            lda ZPtrA
+            lda ZPtrSprA
             clc
             adc #$04
-            sta ZPtrA
-            lda ZPtrA + 1       ; back up $600 (e.g., from $1B to $15)
+            sta ZPtrSprA
+            lda ZPtrSprA + 1    ; back up $600 (e.g., from $1B to $15)
             sec
             sbc #$06
-            sta ZPtrA + 1
+            sta ZPtrSprA + 1
             jmp bgsprite
             ; we have done all lines for this sprite
             ; now, if there are more sprites, do the next one
@@ -178,12 +172,12 @@ bgsprdone:  dec ZSprLeft
             ; move to the next sprite
             ; ZPtr is just beyond the end of the sprite data block
             ; next sprite is either $700 back (e.g., $1580) or here (e.g. $1C00)
-            lda ZPtrA
+            lda ZPtrSprA
             bmi :+              ; branch if we just did an odd sprite
-            lda ZPtrA + 1       ; back up $700, we just did an even sprite
+            lda ZPtrSprA + 1    ; back up $700, we just did an even sprite
             sec
             sbc #$07
-            sta ZPtrA + 1
+            sta ZPtrSprA + 1
             jmp bgsprite        ; go do this next sprite
             
 :           jmp bgsprites
@@ -252,21 +246,22 @@ bgspradd:   lda INLINEADDR, y
 ; work on current shift
 ; assumes:
 ; - ZPixByteI-P hold current (shifted) pixels
-; - ZPtrA points to storage location for this sprite masks/data
-; ends with ZPtrA advanced by 4
+; - ZPtrSprA points to storage location for this sprite masks/data
+; - ZPtrSprA etc. have been set to bank 1 in setmemory
+; ends with ZPtrSprA advanced by 4
 
-bgwrshift:  lda ZPtrA           ; set up the other three pointers
+bgwrshift:  lda ZPtrSprA        ; set up the other three pointers
             clc                 ; nothing below risks setting carry
             adc #$20
-            sta ZPtrB
+            sta ZPtrSprB
             adc #$20
-            sta ZPtrC
+            sta ZPtrMaskA
             adc #$20
-            sta ZPtrD
-            lda ZPtrA + 1
-            sta ZPtrB + 1
-            sta ZPtrC + 1
-            sta ZPtrD + 1
+            sta ZPtrMaskB
+            lda ZPtrSprA + 1
+            sta ZPtrSprB + 1
+            sta ZPtrMaskA + 1
+            sta ZPtrMaskB + 1
             ldy #$03            ; build mask for first half
 bgmaska:    lda ZPixByteI, y
             jsr tomask
@@ -276,14 +271,14 @@ bgmaska:    lda ZPixByteI, y
             jsr xlatequad
             ldy #$00
             lda ZPixByteE
-            sta (ZPtrC), y
+            sta (ZPtrMaskA), y
             lda ZPixByteF
-            sta (ZPtrD), y
+            sta (ZPtrMaskB), y
             iny
             lda ZPixByteG
-            sta (ZPtrC), y
+            sta (ZPtrMaskA), y
             lda ZPixByteH
-            sta (ZPtrD), y
+            sta (ZPtrMaskB), y
             ldy #$03            ; build mask for second half
 bgmaskb:    lda ZPixByteM, y
             jsr tomask
@@ -293,14 +288,14 @@ bgmaskb:    lda ZPixByteM, y
             jsr xlatequad
             ldy #$02
             lda ZPixByteE
-            sta (ZPtrC), y
+            sta (ZPtrMaskA), y
             lda ZPixByteF
-            sta (ZPtrD), y
+            sta (ZPtrMaskB), y
             iny
             lda ZPixByteG
-            sta (ZPtrC), y
+            sta (ZPtrMaskA), y
             lda ZPixByteH
-            sta (ZPtrD), y
+            sta (ZPtrMaskB), y
             ldy #$03            ; translate data for first half
 bgspra:     lda ZPixByteI, y
             jsr zeroclear
@@ -310,14 +305,14 @@ bgspra:     lda ZPixByteI, y
             jsr xlatequad
             ldy #$00
             lda ZPixByteE
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             lda ZPixByteF
-            sta (ZPtrB), y
+            sta (ZPtrSprB), y
             iny
             lda ZPixByteG
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             lda ZPixByteH
-            sta (ZPtrB), y
+            sta (ZPtrSprB), y
             ldy #$03            ; translate data for second half
 bgsprb:     lda ZPixByteM, y
             jsr zeroclear
@@ -327,14 +322,14 @@ bgsprb:     lda ZPixByteM, y
             jsr xlatequad
             ldy #$02
             lda ZPixByteE
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             lda ZPixByteF
-            sta (ZPtrB), y
+            sta (ZPtrSprB), y
             iny
             lda ZPixByteG
-            sta (ZPtrA), y
+            sta (ZPtrSprA), y
             lda ZPixByteH
-            sta (ZPtrB), y
+            sta (ZPtrSprB), y
             rts
 
 ; convert a sensibly-encoded byte into a mask
@@ -575,13 +570,86 @@ MapTiles:
 
 ; Sprite graphics
 ; Anything that is in the mask color (Grey2, c__) will be transparent.
+; Anything that is in the translucent color (Grey1, c_x) will be filtered.
 ; each sprite definition is 32 ($20) bytes
 
-NumSprites = 1
+NumSprites = 10     ; number of sprite-frames to process
 
 Sprites:
-; Player - TODO - later have it bank depending on XV, so have 3 orientations
-            
+; Log 1A
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, cBn, c__, cAq, c__, c__
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cBn, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cBn, cOr, cYw
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, c__, c__, c__, c__, c__
+; Log 1B
+            tile    c__, c__, c__, c__, cAq, c__, c__
+            tile    c__, c__, cBn, cAq, c__, cAq, c__
+            tile    c__, cOr, cBn, c__, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cBn, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cBn, cOr, cYw
+            tile    c__, c__, c__, cBn, cBn, cBn, cOr
+            tile    c__, cAq, c__, c__, c__, c__, c__
+            tile    c__, c__, cAq, c__, c__, c__, c__
+; Log 2A
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, cBn, c__, cAq, c__, c__
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    cOr, cbk, cPk, cBn, cBn, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cBn, cOr, cYw
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, c__, c__, c__, c__, c__
+; Log 2B
+            tile    c__, c__, c__, c__, cAq, c__, c__
+            tile    c__, c__, cBn, cAq, c__, cAq, c__
+            tile    c__, cOr, cBn, c__, cBn, cBn, cOr
+            tile    cOr, cbk, cPk, cBn, cBn, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cBn, cOr, cYw
+            tile    c__, c__, c__, cBn, cBn, cBn, cOr
+            tile    c__, cAq, c__, c__, c__, c__, c__
+            tile    c__, c__, cAq, c__, c__, c__, c__
+; Log 3A
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, cBn, c__, cAq, c__, c__
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cBn, cOr, cYw
+            tile    cOr, cPk, cPk, cbk, cBn, cOr, cYw
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, c__, c__, c__, c__, c__
+; Log 3B
+            tile    c__, c__, c__, c__, cAq, c__, c__
+            tile    c__, c__, cBn, cAq, c__, cAq, c__
+            tile    c__, cOr, cBn, c__, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cBn, cOr, cYw
+            tile    cOr, cPk, cPk, cbk, cBn, cOr, cYw
+            tile    c__, c__, c__, cBn, cBn, cBn, cOr
+            tile    c__, cAq, c__, c__, c__, c__, c__
+            tile    c__, c__, cAq, c__, c__, c__, c__
+; Log 4A
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, cBn, c__, cAq, c__, c__
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cPk, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cPk, cOr, cYw
+            tile    c__, cOr, cBn, cBn, cBn, cBn, cOr
+            tile    c__, c__, c__, c__, c__, c__, c__
+            tile    c__, c__, c__, c__, c__, c__, c__
+; Log 4B
+            tile    c__, c__, c__, c__, cAq, c__, c__
+            tile    c__, c__, cBn, cAq, c__, cAq, c__
+            tile    c__, cOr, cBn, c__, cBn, cBn, cOr
+            tile    cOr, cbk, cBn, cBn, cPk, cOr, cYw
+            tile    cOr, cBn, cBn, cbk, cPk, cOr, cYw
+            tile    c__, c__, c__, cBn, cBn, cBn, cOr
+            tile    c__, cAq, c__, c__, c__, c__, c__
+            tile    c__, c__, cAq, c__, c__, c__, c__
+
+; PlayerA
             tile    c__, c__, c__, cPk, c__, c__, c__
             tile    c__, c__, cPk, cMg, cPk, c__, c__
             tile    c__, cPk, cMg, cMg, cMg, cPk, c__
@@ -590,6 +658,12 @@ Sprites:
             tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
             tile    cPk, cOr, cMg, cMg, cMg, cOr, cPk
             tile    c__, cPk, cPk, cPk, cPk, cPk, c__
-
-
-
+; PlayerB
+            tile    c__, c__, c__, cYw, c__, c__, c__
+            tile    c__, c__, cPk, cMg, cPk, c__, c__
+            tile    c__, cPk, cMg, cMg, cMg, cPk, c__
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
+            tile    cPk, cOr, cMg, cMg, cMg, cOr, cPk
+            tile    c__, cPk, cPk, cPk, cPk, cPk, c__

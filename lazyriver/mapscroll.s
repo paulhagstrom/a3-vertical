@@ -149,6 +149,7 @@ tilecache:  lda MapLineL, x
             ; buffer the pointers into tile graphics for the line
             ldy #19
 pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
+            and #$07            ; tile shape is just the last three bits
             lsr
             ror
             ror
@@ -158,16 +159,13 @@ pmcache:    lda (ZMapPtr), y    ; load map byte (shape to draw)
             bpl pmcache
             rts
 
-; set up pointers and banks for graphics interaction
-; bank 0 for graphics, ZPtrA for map tiles
+; set up pointers for graphics interaction
+; bank 0 for graphics, ZPtrSprA for map tiles
 ; X, Y, carry survive
-gfxinit:    lda #$81            ; map is bank 1
-            sta ZMapPtr + XByte
-            sta ZPtrA + XByte
-            lda #$14            ; tile graphics start at $1400
-            sta ZPtrA + 1
+gfxinit:    lda #$14            ; tile graphics start at $1400
+            sta ZPtrSprA + 1
             lda #$00
-            sta ZPtrA           ; tile graphics low byte
+            sta ZPtrSprA        ; tile graphics low byte
             sta R_BANK          ; move to bank zero for the graphics
             rts
 
@@ -178,7 +176,7 @@ gfxinit:    lda #$81            ; map is bank 1
 ; assumes:
 ; - tile cache holds the tile graphics addresses for tiles including this line
 ; - ZP is $1A00
-; - ZPtrA already points to tile asset data in bank 1
+; - ZPtrSprA already points to tile asset data in bank 1
 ; each tile takes two bytes on the screen, so index of start of pixel data
 ; on the screen is 2x the index into cache of tile data
 ; (That is: tile 3 is filling bytes 6 and 7 on the screen)
@@ -216,19 +214,19 @@ pmraster:   ldx ZMapX           ; tile column
             txa
             asl                 ; tile column x2 for graphics memory offset
             tax
-            lda (ZPtrA), y      ; first byte of tile graphics
+            lda (ZPtrSprA), y   ; first byte of tile graphics
 PLLineA = *+1
             sta INLINEADDR, x   ; put in graphics page, e.g., $2000
             iny
-            lda (ZPtrA), y
+            lda (ZPtrSprA), y
 PLLineB = *+1
             sta INLINEADDR, x   ; put in graphics page, e.g., $4000
             iny
-            lda (ZPtrA), y
+            lda (ZPtrSprA), y
 PLLineC = *+1
             sta INLINEADDR, x   ; put in graphics page, e.g., $2001
             iny
-            lda (ZPtrA), y
+            lda (ZPtrSprA), y
 PLLineD = *+1
             sta INLINEADDR, x   ; put in graphics page, e.g., $4001
             dec ZMapX
