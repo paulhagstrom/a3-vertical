@@ -27,69 +27,49 @@ dmgnddown:  lda #$FF            ; map will be scrolling down, subtracting from o
 dmgndmove:  sta NeedScroll      ; 0=stop, neg=map down/dec off, pos=map up/inc off
 dmgndstay:
             ; move player
-            lda VelocityY
-            beq dmheronov       ; branch if not moving vertically
-            bmi dmherovup       ; branch if hero moving up
-            ; hero moving down
-            lda PlayerY
-            clc
-            adc VelocityY
-            cmp #185            ; are we as low as we can be?
-            bcs dmheronov       ; branch away if we can't move down
-            sta PlayerY         ; move down
-            bne dmheronov
-            ; hero moving up
-dmherovup:  lda PlayerY
-            clc
-            adc VelocityY
-            cmp #$09
-            bcc dmheronov       ; branch away if we can't move up
-            sta PlayerY         ; move up
-            ; check horizontal movement
-dmheronov:  lda VelocityX
-            beq dmheronoh       ; branch if not moving horizontally
-            bmi dmheroleft      ; branch if hero moving left
-            ; hero moving right
-            lda PlayerXOff
-            clc
-            adc VelocityX
-            cmp #$07
-            bcc dmherorok
-            sec
-            sbc #$07
-            ldy PlayerX
-            cpy #18
-            bcs dmheronoh
-            inc PlayerX
-dmherorok:  sta PlayerXOff
-            jmp dmheronoh
-            ; hero moving left
-dmheroleft: lda PlayerXOff
-            clc
-            adc VelocityX
-            bpl dmherolok
-            clc
-            adc #$07
-            ldy PlayerX
-            beq dmheronoh
-            dec PlayerX
-dmherolok:  sta PlayerXOff
-dmheronoh:
+            ldy #127
+            jsr ticksprite
+            ; do not subject the player to the flow vectors or shore collisions
+            jsr movesprite
+            jsr collsprite
+            jsr spriteupd
             ; move logs
             ldy NumLogs
-            sty ZCurrSpr
+dmmovelog:  jsr ticksprite
+            jsr flowsprite
+            jsr movesprite
+            jsr collshore
+            jsr collsprite
+            jsr spriteupd
+            ; it is known that ticksprite saves y in ZCurrSpr
+            ldy ZCurrSpr
+            dey
+            bpl dmmovelog
+            
+            rts
+
+; tick animation for a single sprite
+ticksprite: sty ZCurrSpr
             ; animate sprite (alternate frames)
-            dec (ZSprTick), y
+            lda (ZSprTick), y
+            sec
+            sbc #$01
+            sta (ZSprTick), y
             bpl :+              ; not time to switch frames yet
             lda (ZSprPeriod), y ; reset tick timer
             sta (ZSprTick), y
             lda (ZSprAnim), y   ; switch frames
             eor #$01
             sta (ZSprAnim), y
-            ; retrieve flow vector from map tile this sprite starts on
-:           lda (ZSprY), y      ; find map line
+:           rts
+
+; update sprite's velocity based on flow vector of the tile it is in
+; assumes y and ZCurrSpr hold the sprite number (after ticksprite)
+flowsprite: lda (ZSprY), y      ; find map line
+            sta ZOldY
             tax
             lda (ZSprX), y      ; find map column
+            sta ZOldX
             tay
             lda MapLineL, x
             sta ZMapPtr
@@ -120,27 +100,195 @@ dmheronoh:
             ; update velocity based on flow vector
             lda (ZSprYV), y
             sec
-            sbc ZYFlow          ; YOU ARE HERE AND MATH IS HARD
-            beq :++             ; y velocity already matches flow speed
-            bcs :+              ; y velocity is more positive than flow speed
-            inc (ZSprYV), y     ; increase Y velocity toward flow speed
-            jmp :++
-:           dec (ZSprYV), y     ; decrease Y velocity toward flow speed
-:           lda (ZSprXV), y
-            cmp ZXFlow
-            beq :++             ; x velocity already matches flow speed
-            bcs :+              ; x velocity is more positive than flow speed
-            inc (ZSprYV), y     ; increase X velocity toward flow speed
-            jmp :++
-:           dec (ZSprYV), y     ; decrease X velocity toward flow speed
-            ; attempt to move the sprite according to its velocity vector
-:           lda (ZSprXOff), y
+            sbc ZYFlow
+            beq logcheckxv      ; y velocity already matches flow speed
+            bvc :+
+            eor #$80
+:           bmi :+              ; branch if y vel is more negative than flow speed
+            lda (ZSprYV), y     ; decrease Y velocity toward flow speed
+            sec
+            sbc #$01
+            sta (ZSprYV), y
+            jmp logcheckxv
+:           lda (ZSprYV), y     ; increase Y velocity toward flow speed
             clc
-            adc (ZSprXV), y
-            bmi :+              ; branch away if offset wrapped moving leftward
+            adc #$01
+            sta (ZSprYV), y
+logcheckxv: lda (ZSprXV), y
+            sec
+            sbc ZXFlow
+            beq flowdone       ; x velocity already matches flow speed
+            bvc :+
+            eor #$80
+:           bmi :+              ; branch if x vel is more negative than flow speed
+            lda (ZSprYV), y     ; decrease X velocity toward flow speed
+            sec
+            sbc #$01
+            sta (ZSprYV), y
+            jmp flowdone
+:           lda (ZSprYV), y     ; increase X velocity toward flow speed
+            clc
+            adc #$01
+            sta (ZSprYV), y
+flowdone:   rts
+
+; attempt to move the sprite according to its velocity vector
+; assumes y and ZCurrSpr hold the sprite number (after ticksprite)
+
+movesprite: lda (ZSprXV), y
+            bmi loggoleft       ; branch if moving left
+            clc                 ; moving right, add to x offset
+            adc (ZSprXOff), y
             cmp #$07
-            bcc :+              ; branch away if offset wrapped moving rightward
-            bcs :+              ; branch away if offset did not wrap
-            
-            
-dmdone:     rts
+            bcc hjustoff        ; branch if still within the same tile
+            sbc #$07            ; wrap offset (carry known to be set)
+            sta ZNewXOff
+            lda ZOldX
+            cmp #18
+            bcc :+              ; branch if we can move further right
+            sta ZNewX           ; stay in the same place
+            lda #$06            ; stop at offset 6
+            sta ZNewXOff
+            bne logvert         ; branch always
+:           adc #$01            ; increase X (carry known to be clear)
+            sta ZNewX
+            bne logvert         ; branch always
+hjustoff:   sta ZNewXOff
+            lda ZOldX
+            sta ZNewX
+            jmp logvert
+loggoleft:  clc                 ; log is moving left
+            adc (ZSprXOff), y
+            bpl hjustoff        ; branch if still within the same tile
+            clc
+            adc #$07            ; wrap offset
+            sta ZNewXOff
+            lda ZOldX
+            cmp #$01
+            bcs :+              ; branch if we can move further left
+            sta ZNewX           ; stay in the same place
+            lda #$00            ; stop at offset 0
+            sta ZNewXOff
+            beq logvert         ; branch always
+:           sbc #$01            ; carry is known to be set, decrease X
+            sta ZNewX
+logvert:    
+            lda (ZSprYV), y
+            bmi loggoup         ; branch if moving up
+            clc                 ; moving down, add to y offset
+            adc (ZSprYOff), y
+            cmp #$08
+            bcc vjustoff        ; branch if still within the same tile
+            and #$07            ; wrap offset
+            sta ZNewYOff
+            lda ZOldY
+            cmp #254
+            bcc :+              ; branch if we can move further down
+            sta ZNewY           ; stay in the same place
+            lda #$07            ; stop at offset 7
+            sta ZNewYOff
+            bne mvsprdone        ; branch always
+:           adc #$01            ; increase Y (carry known to be clear)
+            sta ZNewY
+            bne mvsprdone        ; branch always
+vjustoff:   sta ZNewYOff
+            lda ZOldY
+            sta ZNewY
+            jmp logvert
+loggoup:    clc                 ; log is moving up
+            adc (ZSprYOff), y
+            bpl vjustoff        ; branch if still within the same tile
+            and #$07            ; wrap offset
+            sta ZNewYOff
+            lda ZOldY
+            cmp #$01
+            bcs :+              ; branch if we can move further up
+            sta ZNewY           ; stay in the same place
+            lda #$00            ; stop at offset 0
+            sta ZNewYOff
+            beq mvsprdone         ; branch always
+:           sbc #$01            ; carry is known to be set, decrease Y
+            sta ZNewY
+mvsprdone:  rts
+
+            ; ZNewX, ZNewXOff, ZNewY, ZNewYoff now hold the proposed new position
+            ; now we need to check to see if the new position is blocked
+            ; two things to check: shoreline and other sprites
+            ; to check shoreline, we can basically check the map for whether
+            ; ZNewX, ZNewY is on land.  If it is, we stop velocity and do not
+            ; move.  This could make a log stop slightly short of shore, though.
+            ; flow should get it moving again.  Want to allow it to move, e.g., in X
+            ; direction even if it can't move in Y direction.
+
+; Check collision with the shoreline and stop (possibly in one direction)
+; if the sprite hits it.
+; assumes that ZCurrSpr is set to the current sprite
+collshore:  ldx ZNewY
+            ldy ZNewX
+            lda MapLineL, x
+            sta ZMapPtr
+            lda MapLineH, x
+            sta ZMapPtr + 1
+            lda (ZMapPtr), y    ; load map data
+            and #$04            ; check water bit
+            bne shoredone       ; branch away if movement lands in water, on to sprite check
+            ; desired movement failed, check if moving just in Y direction would work
+            ldy ZOldX
+            lda (ZMapPtr), y    ; load map data
+            and #$04            ; check water bit
+            clc                 ; tell logshyok block to only zero X
+            bne logshyok        ; branch away if vertical move lands in water
+            ; moving just vertically fails, check if moving just in X direction works
+            ldy ZNewX
+            ldx ZOldY
+            lda MapLineL, x
+            sta ZMapPtr
+            lda MapLineH, x
+            sta ZMapPtr + 1
+            lda (ZMapPtr), y    ; load map data
+            and #$04            ; check water bit
+            bne logshxok        ; branch away if vertical move lands in water
+            ; no movement worked, so zero out velocity and stay here.
+            sec                 ; tell following block to zero both X and Y
+            ; shore impedes horizontal movement only
+logshyok:   ldy ZCurrSpr
+            lda #$00
+            sta (ZSprXV), y
+            lda ZOldX           ; propose that X not move
+            sta ZNewX
+            lda (ZSprXOff), y
+            sta ZNewXOff
+            bcc shoredone       ; jump to rts if we only zero X
+            ; shore impedes vertical movement only
+logshxok:   ldy ZCurrSpr
+            lda #$00
+            sta (ZSprYV), y
+            lda ZOldY           ; propose that Y not move
+            sta ZNewY
+            lda (ZSprYOff), y
+            sta ZNewYOff        ; fall through to rts
+shoredone:  rts
+
+; check if this sprite collides with other sprites
+; we are here only if movement didn't get blocked by a shore already
+; for checking against sprites, it is going to be more elaborate.
+; may require checking each sprite against all others.
+; for each sprite A
+; for each sprite B
+; if masks cannot overlap, skip ahead
+; AND through the area of sprite overlap, if anything is nonzero, collision
+; some delicate math to determine these "overlap" conditions
+collsprite: rts
+
+; update the sprite's coordinates based on what survived of the proposal
+; assumes ZCurrSpr is set to current sprite number
+spriteupd:  ldy ZCurrSpr
+            lda ZNewX
+            sta (ZSprX), y
+            lda ZNewY
+            sta (ZSprY), y
+            lda ZNewXOff
+            sta (ZSprXOff), y
+            lda ZNewYOff
+            sta (ZSprYOff), y
+            rts

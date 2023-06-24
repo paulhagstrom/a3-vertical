@@ -34,12 +34,12 @@ CodeStart:  jmp gameinit
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
-PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
-PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
-PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
+;PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
+;PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
+;PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
 ;PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
-VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
-VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
+;VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
+;VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 GroundVel:  .byte   0                       ; Y-velocity of the ground (neg, 0, pos)
 PgOneTop:   .byte   0                       ; map row at top of the screen on page 1
 PgTwoTop:   .byte   0                       ; map row at top of the screen on page 2 (must follow PgOneTop)
@@ -49,7 +49,7 @@ PgTwoOff:   .byte   0                       ; scroll offset on page 2 (must foll
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
 
-NumLogs:    .byte   0                       ; number of logs on map
+NumLogs:    .byte   0                       ; number of logs on map (zero based)
 
 ; The following settings govern when how often the movement clock goes off, and when
 ; the page swaps, in VBLs.  This is kind of set by guesswork and trial and error.
@@ -149,73 +149,74 @@ IRQSaveC = *+1
 
 ; process keypress
 
-handlekey:  tay
+handlekey:  tax
 KeyFlag = *+1
             lda #INLINEVAR
             and #$02            ; shift key down
             sta KeyFlag         ; just make it nonzero for shift, for BIT+BNE
-            tya
+            txa
+            ldy #127            ; player velocity is attached to sprite 127
             cmp #$C9            ; I (up)
             bne :+++
-            lda VelocityY
+            lda (ZSprYV), y
             sec
             sbc #$01
-            tay
-            sec
-            sbc #<-3
+            tax
+            sec                 ; make sure we aren't moving faster than -3
+            sbc #<-3            ; (borderline magic signed number comparison)
             bvc :+
             eor #$80
-:           bmi :+
-            tya
-            sta VelocityY
+:           bmi :+              ; new velocity is < -3, so don't store it
+            txa
+            sta (ZSprYV), y
 :           jmp keydone
 :           cmp #$AC            ; , (down)
             bne :+++
-            lda VelocityY
+            lda (ZSprYV), y
             clc
             adc #$01
-            tay
+            tax
             sec
             sbc #$04
             bvc :+
             eor #$80
 :           bpl :+
-            tya
-            sta VelocityY
+            txa
+            sta (ZSprYV), y
 :           jmp keydone
 :           cmp #$CA            ; J (left)
             bne :+++
-            lda VelocityX
+            lda (ZSprXV), y
             sec
             sbc #$01
-            tay
+            tax
             sec
             sbc #<-3
             bvc :+
             eor #$80
 :           bmi :+
-            tya
-            sta VelocityX
+            txa
+            sta (ZSprXV), y
 :           jmp keydone
 :           cmp #$CC            ; L (right)
             bne :+++
-            lda VelocityX
+            lda (ZSprXV), y
             clc
             adc #$01
-            tay
+            tax
             sec
             sbc #$04
             bvc :+
             eor #$80
 :           bpl :+
-            tya
-            sta VelocityX
+            txa
+            sta (ZSprXV), y
 :           jmp keydone
 :           cmp #$CB            ; K (stop)
             bne :+
             lda #$00
-            sta VelocityX
-            sta VelocityY
+            sta (ZSprXV), y
+            sta (ZSprYV), y
             jmp keydone
 :           cmp #$C1            ; A (ground stop)
             bne :+
@@ -332,21 +333,21 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #232            ; top map row when we start (makes bottom row 255)
             sta PgOneTop        ; top map row - page 1
             sta PgTwoTop        ; top map row - page 2
-            lda #$09            ; start player kind of in the middle
-            sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
-            lda #128            ; Start down near the bottom of the screen
-            sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
+            ;lda #$09            ; start player kind of in the middle
+            ;sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
+            ;lda #128            ; Start down near the bottom of the screen
+            ;sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             sta TaskStep        ; unallocated task step to stall until game clock ticks
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
             ;sta PlayerYOff      ; this is the Y offset (0-7) of the player from the top of the tile
-            sta PlayerXOff      ; this is the X offset (0-7) of the player from the left of the tile
+            ;sta PlayerXOff      ; this is the X offset (0-7) of the player from the left of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
-            sta VelocityX       ; player X velocity, can be negative, zero, or positive
-            sta VelocityY       ; player Y velocity, can be negative, zero, or positive
+            ;sta VelocityX       ; player X velocity, can be negative, zero, or positive
+            ;sta VelocityY       ; player Y velocity, can be negative, zero, or positive
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
