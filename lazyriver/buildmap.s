@@ -236,12 +236,20 @@ bmlogs:
             stx ZSprPeriod + 1
             eor #$80
             inx
-            sta ZSprDrX
-            stx ZSprDrX + 1
+            sta ZSprDrXOne
+            stx ZSprDrXOne + 1
             eor #$80
             inx
-            sta ZSprDrY
-            stx ZSprDrY + 1
+            sta ZSprDrYOne
+            stx ZSprDrYOne + 1
+            eor #$80
+            inx
+            sta ZSprDrXTwo
+            stx ZSprDrXTwo + 1
+            eor #$80
+            inx
+            sta ZSprDrYTwo
+            stx ZSprDrYTwo + 1
             eor #$80
             inx
             sta ZSprBgL
@@ -264,8 +272,10 @@ bmlogs:
             sta ZSprType + XByte
             sta ZSprTick + XByte
             sta ZSprAnim + XByte
-            sta ZSprDrX + XByte
-            sta ZSprDrY + XByte
+            sta ZSprDrXOne + XByte
+            sta ZSprDrYOne + XByte
+            sta ZSprDrXTwo + XByte
+            sta ZSprDrYTwo + XByte
             sta ZSprBgL + XByte
             sta ZSprBgH + XByte
             sta ZSprSprH + XByte
@@ -354,11 +364,11 @@ bmdone:     rts
 ; common code between logs and player
 ; enter with A being the sprite type (already stored), and y being the sprite number
 sprfinish:
-            asl
+            asl                     ; A=sprite type
             asl
             asl                     ; x 8
             sec
-            sbc (ZSprType), y       ; minus log type ( = x 7)
+            sbc (ZSprType), y       ; minus sprite type ( = x 7)
             clc
             adc #$15                ; sprite data starts at $1500.
             sta (ZSprSprH), y
@@ -369,7 +379,8 @@ sprfinish:
             sta (ZSprYOff), y
             sta (ZSprTick), y
             lda #$FF
-            sta (ZSprDrX), y        ; mark as undrawn
+            sta (ZSprDrXOne), y     ; mark as undrawn
+            sta (ZSprDrXTwo), y     ; mark as undrawn
             ; compute cache address
             tya
             and #$03                ; sprite number mod 4

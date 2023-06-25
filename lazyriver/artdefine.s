@@ -55,7 +55,7 @@ C_WATER_D   = $07         ; water type 4
 
 ; sprite names
 
-S_PLAYER    = $08
+S_PLAYER    = $04
 
 ; a slightly more intuitive way to look at this, with the
 ; pixels backwards but the bits in the right order
@@ -95,7 +95,7 @@ buildtiles: lda #$14            ; start map tiles at $1400
             inx
             cpx #$04
             bne :-
-            dey
+            dey                 ; y ends past bytes, move back to last byte
             jsr xlatequad       ; A-D (sensible) => E-H (bonkers)
             ldx #$03
 :           lda ZPixByteE, x    ; copy bonkers bytes into asset memory
@@ -105,7 +105,7 @@ buildtiles: lda #$14            ; start map tiles at $1400
             bpl :-
             tya                 ; move to next line
             clc
-            adc #$05
+            adc #$05            ; y ends before bytes, move past bytes
             tay
             bne :---            ; 8 tiles, 8 lines of 4 bytes each = 256
             rts
@@ -116,7 +116,7 @@ buildsprs:  lda #$15            ; start sprite data at $1500
             sta ZPtrSprA + 1
             lda #$00
             sta ZPtrSprA
-            lda #NumSprites     ; number of sprites to transform
+            lda #NumSprites     ; number of sprites to transform (1-based)
             sta ZSprLeft
             lda #>Sprites       ; put current sprite line at the beginning of definition
             sta CurrSprLn + 1
@@ -133,9 +133,9 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             dec ZShiftsLeft
             bpl bgsprshift
             ; we have done all shifts and masks for this sprite, one line
-            ; pointer is now just past last shift
+            ; pointer is now just past last shift (start + $700)
             ; do next line in this sprite if more remain
-            lda CurrSprLn       ; advance pointer to sprite definition by 1 line
+            lda CurrSprLn       ; advance sprite definition pointer by 1 line
             clc
             adc #$04
             sta CurrSprLn
@@ -152,9 +152,11 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             dec ZSprLnsLeft
             bpl bgsprline
             ; CurrSprLn is now pointing just past this sprite
-            ; ZPtrSprA has backed up, just past the first shift of this sprite
-            ; if ZPtrSprA is at $80, it is in the right place
-            ; but if it is at $00 then we need to advance $700.
+            ; (to first line of next sprite, if there is another one)
+            ; ZPtrSprA points either to start+$80 (correct) or to
+            ; start (which needs to be [re=]advanced by $700)
+            ; TODO - once this is shown to work, maybe optimize out the
+            ; Duke of Yorking
             lda ZPtrSprA
             bmi :+
             lda ZPtrSprA + 1
@@ -554,7 +556,7 @@ MapTiles:
 ; Anything that is in the translucent color (Grey1, c_x) will be filtered.
 ; each sprite definition is 32 ($20) bytes
 
-NumSprites = 10     ; number of sprite-frames to process
+NumSprites = 10     ; number of sprite-frames to process (2x num of sprites)
 
 Sprites:
 ; Log 1A
@@ -638,7 +640,7 @@ Sprites:
             tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
             tile    cPk, cMg, c_x, c_x, c_x, cMg, cPk
             tile    cPk, cOr, cMg, cMg, cMg, cOr, cPk
-            tile    c__, cPk, cPk, cPk, cPk, cPk, c__
+            tile    c__, cPk, cOr, cYw, cOr, cPk, c__
 ; PlayerB
             tile    c__, c__, c__, cYw, c__, c__, c__
             tile    c__, c__, cPk, cMg, cPk, c__, c__

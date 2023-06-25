@@ -74,20 +74,20 @@ pgcompute:  lda ShownPage
 ; reuses ZTileCache to hold the 8 adjusted lines
 ; enter with A holding the screen line we're targeting for the first sprite line
 ; pgcompute must be called first (to set ZScrOffset)
-
-adjcompute: sta ZPxScratch
+; no registers survive
+adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             clc
             adc ZScrOffset
             and #$07            ; (y+offset)%8
             tay                 ; stash in y
             ldx #$00
-:           lda ZPxScratch      ; retrieve PlayerY
+:           lda ZPxScratch      ; retrieve sprite absolute raster
             and #%11111000      ; 8*(int(y/8))
             sta ZTileCache, x
             tya                 ; retrieve (y+offset)%8
             clc
             adc ZTileCache, x   ; add to 8*(int(y/8))
-            sta ZTileCache, x   ; and store it in the cache
+            sta ZTileCache, x   ; and record the adjusted line
             iny                 ; add one to y+offset
             tya
             and #$07            ; and mod 8
@@ -121,10 +121,15 @@ setgrptrs:  ldy ZTileCache, x   ; adjusted raster line for sprite line x
             sta ZPtrScrA
             sta ZPtrScrB
             rts
-            
+
+; draw the sprites on the nonvisible page
+; draw the sprites in reverse order, ending with the player
+; in case of overlap, lower number sprites will be on top,
+; player atop all.
+
 setsprites: jsr pgcompute       ; ZScrOffset, etc.
             ; draw the log sprites
-            lda NumLogs
+            lda NumLogs         ; NumLogs is 0-based
             sta LogsLeft
 setlog:     ldy LogsLeft
             jsr onesprite       ; draw the log
@@ -144,16 +149,22 @@ onesprite:  sty ZCurrSpr
             sec
             sbc ZScrTop
             bcc sproffscr       ; sprite is above top screen line, skip
-            cmp #23
+            cmp #22             ; conservative for now
             bcs sproffscr       ; sprite is below the bottom screen line, skip
             asl                 ; compute target y raster
             asl
             asl                 ; distance in map lines from top, times 8
+            clc
+            adc #$08            ; plus 8 (after score text line)
             sec
             sbc ZScrOffset      ; decreased by screen offset
             clc
             adc (ZSprYOff), y   ; increased by sprite Y coordinate offset
-            sta (ZSprDrY), y    ; remember where we drew this
+            bit ZPgIndex
+            beq :+
+            sta (ZSprDrYTwo), y ; remember where we drew this (on page 2)
+            .byte $2C           ; opcode for BIT, eats next instruction
+:           sta (ZSprDrYOne), y ; remember where we drew this (on page 1)
             jsr adjcompute      ; compute the adjusted lines into ZTileCache
             ldy ZCurrSpr
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
@@ -169,15 +180,19 @@ onesprite:  sty ZCurrSpr
             lda (ZSprX), y      ; load x map position (0-18)
             asl
             sta ZScrX           ; byte to start drawing at (evens 0-38)
-            sta (ZSprDrX), y    ; remember where we drew this
+            bit ZPgIndex
+            beq :+
+            sta (ZSprDrXTwo), y ; remember where we drew this (on page 2)
+            .byte $2C           ; opcode for BIT, eats next instruction
+:           sta (ZSprDrXOne), y ; remember where we drew this (on page 1)
             lda (ZSprSprH), y   ; page where the sprite data starts
             sta ZPtrSprA + 1
             sta ZPtrSprB + 1
             sta ZPtrMaskA + 1
             sta ZPtrMaskB + 1
             lda (ZSprAnim), y   ; current frame
-            lsr
-            ror                 ; x $80 (frame 2 is in second half of pages)
+            lsr                 ; into carry
+            ror                 ; $80 (frame 2) or $00 (frame 1)
             sta ZPtrSprA        ; data A (e.g., $1500)
             adc #$20            ; data B (e.g., $1520)
             sta ZPtrSprB
@@ -231,13 +246,21 @@ spdone:     rts
 clrsprites: jsr pgcompute       ; set ZScrOffset, etc
             ; clear the player
             ldy #$7F
-            lda (ZSprDrX), y    ; check to see if it was actually drawn
+            bit ZPgIndex        ; check to see if it was actually drawn
+            beq :+
+            lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
+            .byte $2C           ; opcode for BIT, eats next instruction
+:           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
             bmi :+              ; branch away if it was not drawn
             jsr clrsprite
             ; clear the log sprites, in reverse (in case of overlap)
 :           ldy #$00
 clrlog:     sty LogsLeft
-            lda (ZSprDrX), y    ; check to see if it was actually drawn
+            bit ZPgIndex        ; check to see if it was actually drawn
+            beq :+
+            lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
+            .byte $2C           ; opcode for BIT, eats next instruction
+:           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
             bmi :+              ; branch away if it was not drawn
             jsr clrsprite
             ldy LogsLeft
@@ -251,7 +274,11 @@ clrlog:     sty LogsLeft
 ; entry: Y holds the sprite number, A holds x-byte it was drawn at
 clrsprite:  sty ZCurrSpr
             sta ZScrX           ; should be (prior) PlayerX (in tiles) x2
-            lda (ZSprDrY), y    ; recall the Y we drew the sprite at
+            bit ZPgIndex        ; check to see if it was actually drawn
+            beq :+
+            lda (ZSprDrYTwo), y ; recall where we drew this (on page 2)
+            .byte $2C           ; opcode for BIT, eats next instruction
+:           lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
             jsr adjcompute      ; compute the adjusted lines
             ldy ZCurrSpr
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address

@@ -64,11 +64,13 @@ ZSprType    = $3C   ; pointer to sprite type data
 ZSprTick    = $3E   ; pointer to sprite tick data
 ZSprAnim    = $40   ; pointer to sprite current frame data
 ZSprPeriod  = $42   ; pointer to sprite tick period data
-ZSprDrX     = $44   ; pointer to X byte sprite drawn in (or minus if not drawn)
-ZSprDrY     = $46   ; pointer to Y raster sprite drawn in
-ZSprBgL     = $48   ; pointer to low byte of pointer to sprite cached background
-ZSprBgH     = $4A   ; pointer to high byte of pointer to sprite cached background
-ZSprSprH    = $4C   ; pointer to high byte of sprite data (correlates with ZSprType)
+ZSprDrXOne  = $44   ; pointer to X byte sprite drawn in (or minus if not drawn)
+ZSprDrYOne  = $46   ; pointer to Y raster sprite drawn in
+ZSprDrXTwo  = $48   ; pointer to X byte sprite drawn in (or minus if not drawn)
+ZSprDrYTwo  = $4A   ; pointer to Y raster sprite drawn in
+ZSprBgL     = $4C   ; pointer to low byte of pointer to sprite cached background
+ZSprBgH     = $4E   ; pointer to high byte of pointer to sprite cached background
+ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprType)
 
 ; pointers used during movement processing
 ;ZOldPtr     = $50   ; original position of element moving
