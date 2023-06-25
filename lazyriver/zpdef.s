@@ -76,7 +76,7 @@ ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprT
 ;ZOldPtr     = $50   ; original position of element moving
 ;ZNewPtr     = $52   ; new position of element moving
 ; variables used during movement processing
-ZMapTmp     = $56   ; map byte
+ZMapTmp     = $55   ; map byte
 ZCurrSpr    = $56   ; current sprite being processed
 ZYFlow      = $57   ; map y flow
 ZXFlow      = $58   ; map x flow

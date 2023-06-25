@@ -68,7 +68,7 @@ ticksprite: sty ZCurrSpr
 :           rts
 
 ; update sprite's velocity based on flow vector of the tile it is in
-; assumes y and ZCurrSpr hold the sprite number (after ticksprite)
+; assumes ZCurrSpr hold the sprite number (after ticksprite)
 flowsprite: ldx ZOldY           ; find map line
             ldy ZOldX           ; find map column
             lda MapLineL, x

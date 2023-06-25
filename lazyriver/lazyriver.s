@@ -22,15 +22,17 @@
 
 CodeStart:  jmp gameinit
 
-            .include "artdefine.s"
-            .include "buildmap.s"
+            .include "artdefine.s"          ; pixels for tiles and sprites
+            .include "artinit.s"            ; transform art definitions to usable form
+            .include "buildmap.s"           ; generate the map
+            .include "spriteinit.s"         ; initialize the sprites
 ;            .include "buildsound.s"
-            .include "gamemove.s"
-            .include "interrupts.s"
-            .include "lookups.s"
-            .include "mapscroll.s"
-            .include "sprites.s"
-            .include "status-text40.s"
+            .include "gamemove.s"           ; handle game movement
+            .include "interrupts.s"         ; interrupt routines
+            .include "lookups.s"            ; precomputed lookup tables
+            .include "mapscroll.s"          ; smooth scrolling routines
+            .include "sprites.s"            ; sprite drawing routines
+            .include "status-text40.s"      ; text status bar routines
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
@@ -326,6 +328,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr buildmap        ; set up map data (in bank 1)
             jsr loadstatb
             jsr buildgfx        ; define graphics assets
+            jsr spriteinit      ; initialize sprites
             ;jsr buildsfx        ; define sound effects
             lda #232            ; top map row when we start (makes bottom row 255)
             sta PgOneTop        ; top map row - page 1

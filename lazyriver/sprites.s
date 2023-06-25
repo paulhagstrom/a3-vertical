@@ -106,12 +106,13 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
 ; enter with:
 ; - x being the line of the sprite we are drawing (0-8)
 ; - ZScrX is the byte to start at drawing at (2 times x-coordinate)
+; x survives, a and y do not
 
 setgrptrs:  ldy ZTileCache, x   ; adjusted raster line for sprite line x
             lda YHiresH, y      ; look up $20-based line start high byte
             clc
             adc ZPageBase       ; adjust for page ($20 or $60)
-            sta ZPtrScrB + 1    ; addressing within bank 0, B half
+            sta ZPtrScrB + 1    ; addressing within bank 0, this is B half
             sec
             sbc #$20            ; back to A half ($00 or $40)
             sta ZPtrScrA + 1    ; in bank 0, A half
@@ -140,7 +141,16 @@ setlog:     ldy LogsLeft
             jsr onesprite       ; draw the player
 sproffscr:  rts                 ; cheat and use this rts for onesprite below
 
-
+; if top of screen is 232, offset 0
+; and sprite is on the map at 234, offset 4
+; then we start drawing the sprite at line
+; 8 + 8 * (234 - 232) + 4 = 28
+; if screen offset were 2, then only 6 lines of 232 are displayed.
+; so sprite starts off the top of the screen if it were on 232 with offset < 2 
+; so actual target raster is:
+; 8 + (8 * (ytile - ytop)) + yoffset - scroffset
+; if that is less than 8, sprite is at least partially offscreen
+; similarly if ytile - ytop is >=22 and offsets not 0, sprite is partially offscreen
 ; draw one sprite
 ; entry:
 ;   y = sprite number to draw
@@ -149,7 +159,7 @@ onesprite:  sty ZCurrSpr
             sec
             sbc ZScrTop
             bcc sproffscr       ; sprite is above top screen line, skip
-            cmp #22             ; conservative for now
+            cmp #22             ; conservative for now, would be ok if offsets are 0
             bcs sproffscr       ; sprite is below the bottom screen line, skip
             asl                 ; compute target y raster
             asl
@@ -166,7 +176,7 @@ onesprite:  sty ZCurrSpr
             .byte $2C           ; opcode for BIT, eats next instruction
 :           sta (ZSprDrYOne), y ; remember where we drew this (on page 1)
             jsr adjcompute      ; compute the adjusted lines into ZTileCache
-            ldy ZCurrSpr
+            ldy ZCurrSpr        ; reload Y because adjcompute invalidated it
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA
             clc
@@ -186,6 +196,8 @@ onesprite:  sty ZCurrSpr
             .byte $2C           ; opcode for BIT, eats next instruction
 :           sta (ZSprDrXOne), y ; remember where we drew this (on page 1)
             lda (ZSprSprH), y   ; page where the sprite data starts
+            clc
+            adc (ZSprXOff), y   ; x shift
             sta ZPtrSprA + 1
             sta ZPtrSprB + 1
             sta ZPtrMaskA + 1
@@ -201,7 +213,7 @@ onesprite:  sty ZCurrSpr
             adc #$20            ; mask B (e.g., $1560)
             sta ZPtrMaskB
             
-            ldx #$00
+            ldx #$00                ; start at line 0
 spblit:     jsr setgrptrs           ; set ZPtrScrA/B for pages A/B based on line
             ldy #$03
 spblitline: lda (ZPtrScrA), y       ; screen byte A
@@ -267,20 +279,21 @@ clrlog:     sty LogsLeft
 :           cpy NumLogs
             beq :+              ; branch away if we did the last one
             iny
-            bne clrlog
+            bne clrlog          ; branch always
 :           rts
           
 ; clear a single sprite
 ; entry: Y holds the sprite number, A holds x-byte it was drawn at
+; assumes we have already verified that the sprite was drawn
 clrsprite:  sty ZCurrSpr
             sta ZScrX           ; should be (prior) PlayerX (in tiles) x2
-            bit ZPgIndex        ; check to see if it was actually drawn
+            bit ZPgIndex
             beq :+
             lda (ZSprDrYTwo), y ; recall where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
 :           lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
             jsr adjcompute      ; compute the adjusted lines
-            ldy ZCurrSpr
+            ldy ZCurrSpr        ; reload Y because adjcompute invalidated it
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA
             clc
