@@ -44,10 +44,6 @@
 ; and to erase, store the cached background back to the page.
 ; so we need 64 bytes per visible sprite for background cache.
 
-;SprDrawn:   .byte 0, 0          ; nonzero if sprite was drawn on this page
-;SprX:       .byte 0, 0          ; X at which the sprite was drawn
-;SprY:       .byte 0, 0          ; Y at which the sprite was drawn
-
 ; detect which page we are drawing to and set up some variables relating to that
 ; sets:
 ;   ZScrOffset (scroll offset of the target screen),
@@ -133,7 +129,7 @@ setsprites: jsr pgcompute       ; ZScrOffset, etc.
 setlog:     ldy LogsLeft
             jsr onesprite       ; draw the log
             dec LogsLeft
-            bmi setlog
+            bpl setlog
             ; do player
             ldy #$7F            ; player sprite is number 127
             jsr onesprite       ; draw the player
@@ -143,7 +139,8 @@ sproffscr:  rts                 ; cheat and use this rts for onesprite below
 ; draw one sprite
 ; entry:
 ;   y = sprite number to draw
-onesprite:  lda (ZSprY), y      ; check to see if Y coordinate is onscreen
+onesprite:  sty ZCurrSpr
+            lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             sec
             sbc ZScrTop
             bcc sproffscr       ; sprite is above top screen line, skip
@@ -158,6 +155,7 @@ onesprite:  lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             adc (ZSprYOff), y   ; increased by sprite Y coordinate offset
             sta (ZSprDrY), y    ; remember where we drew this
             jsr adjcompute      ; compute the adjusted lines into ZTileCache
+            ldy ZCurrSpr
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA
             clc
@@ -180,7 +178,7 @@ onesprite:  lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             lda (ZSprAnim), y   ; current frame
             lsr
             ror                 ; x $80 (frame 2 is in second half of pages)
-            lda ZPtrSprA        ; data A (e.g., $1500)
+            sta ZPtrSprA        ; data A (e.g., $1500)
             adc #$20            ; data B (e.g., $1520)
             sta ZPtrSprB
             adc #$20            ; mask A (e.g., $1540)
@@ -251,9 +249,11 @@ clrlog:     sty LogsLeft
           
 ; clear a single sprite
 ; entry: Y holds the sprite number, A holds x-byte it was drawn at
-clrsprite:  sta ZScrX           ; should be (prior) PlayerX (in tiles) x2
+clrsprite:  sty ZCurrSpr
+            sta ZScrX           ; should be (prior) PlayerX (in tiles) x2
             lda (ZSprDrY), y    ; recall the Y we drew the sprite at
             jsr adjcompute      ; compute the adjusted lines
+            ldy ZCurrSpr
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA
             clc

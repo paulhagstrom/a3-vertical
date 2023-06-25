@@ -85,17 +85,6 @@ ZNewX       = $5B   ; postmovement X
 ZNewXOff    = $5C   ; postmovement X offset
 ZNewY       = $5D   ; postmovement Y
 ZNewYOff    = $5E   ; postmovement Y offset
-;ZVelX       = $5D   ; velocity X
-;ZVelY       = $5E   ; velocity Y
-;ZTargX      = $5F   ; target X
-;ZTargY      = $60   ; target Y
-;ZTargD      = $61   ; target distance
-;ZTargV      = $62   ; target value
-;ZTargDX     = $63   ; target vector X
-;ZTargDY     = $64   ; target vector Y
-;ZTargDTemp  = $65   ; target distance temporary variable
-;ZTargDXTemp = $66   ; target vector X temporary variable
-;ZTargDYTemp = $67   ; target vector Y temporary variable
 ;ZIsHero     = $68   ; nonzero if the hero is being processed, 0 otherwise
 
 ;ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line

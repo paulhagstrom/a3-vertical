@@ -58,8 +58,8 @@ NumLogs:    .byte   0                       ; number of logs on map (zero based)
 ;           02- erase sprites on page B (1 tick?)
 ;           01- scroll page B to match page A (if they don't already match) (1 tick?)
 
-MoveDelay   = 4                             ; VBLs per game tick (3 seems about minimum possible)
-FlipTick    = 1                             ; Tick just after which the page flip happens.
+MoveDelay   = 5                             ; VBLs per game tick (3 seems about minimum possible)
+FlipTick    = 2                             ; Tick just after which the page flip happens.
 
 ; main game event loop
 
@@ -340,7 +340,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
-            lda #$03            ; number of logs (0-based), this ought to be level-dependent
+            lda #$00            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
