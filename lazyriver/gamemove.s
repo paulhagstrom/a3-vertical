@@ -49,9 +49,13 @@ dmmovelog:  jsr ticksprite
             rts
 
 ; tick animation for a single sprite
+; enter with Y holding the sprite number
 ticksprite: sty ZCurrSpr
-            ; animate sprite (alternate frames)
-            lda (ZSprTick), y
+            lda (ZSprY), y      ; set ZOldY with map row
+            sta ZOldY
+            lda (ZSprX), y      ; set ZOldX with map column
+            sta ZOldX
+            lda (ZSprTick), y   ; decrease tick
             sec
             sbc #$01
             sta (ZSprTick), y
@@ -65,12 +69,8 @@ ticksprite: sty ZCurrSpr
 
 ; update sprite's velocity based on flow vector of the tile it is in
 ; assumes y and ZCurrSpr hold the sprite number (after ticksprite)
-flowsprite: lda (ZSprY), y      ; find map line
-            sta ZOldY
-            tax
-            lda (ZSprX), y      ; find map column
-            sta ZOldX
-            tay
+flowsprite: ldx ZOldY           ; find map line
+            ldy ZOldX           ; find map column
             lda MapLineL, x
             sta ZMapPtr
             lda MapLineH, x
@@ -137,7 +137,7 @@ flowdone:   rts
 
 movesprite: lda (ZSprXV), y
             bmi loggoleft       ; branch if moving left
-            clc                 ; moving right, add to x offset
+            clc                 ; moving right (or stationary), add to x offset
             adc (ZSprXOff), y
             cmp #$07
             bcc hjustoff        ; branch if still within the same tile
@@ -150,7 +150,7 @@ movesprite: lda (ZSprXV), y
             lda #$06            ; stop at offset 6
             sta ZNewXOff
             bne logvert         ; branch always
-:           adc #$01            ; increase X (carry known to be clear)
+:           adc #$01            ; we can move right, inc X (carry known to be clear)
             sta ZNewX
             bne logvert         ; branch always
 hjustoff:   sta ZNewXOff
@@ -187,14 +187,14 @@ logvert:
             sta ZNewY           ; stay in the same place
             lda #$07            ; stop at offset 7
             sta ZNewYOff
-            bne mvsprdone        ; branch always
-:           adc #$01            ; increase Y (carry known to be clear)
+            bne mvsprdone       ; branch always
+:           adc #$01            ; we can move down, inc Y (carry known to be clear)
             sta ZNewY
-            bne mvsprdone        ; branch always
+            bne mvsprdone       ; branch always
 vjustoff:   sta ZNewYOff
             lda ZOldY
             sta ZNewY
-            jmp logvert
+            jmp mvsprdone
 loggoup:    clc                 ; log is moving up
             adc (ZSprYOff), y
             bpl vjustoff        ; branch if still within the same tile
@@ -206,7 +206,7 @@ loggoup:    clc                 ; log is moving up
             sta ZNewY           ; stay in the same place
             lda #$00            ; stop at offset 0
             sta ZNewYOff
-            beq mvsprdone         ; branch always
+            beq mvsprdone       ; branch always
 :           sbc #$01            ; carry is known to be set, decrease Y
             sta ZNewY
 mvsprdone:  rts

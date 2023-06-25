@@ -82,7 +82,7 @@ bmidxdone:
             sta ShoreLV
             sta ShoreRV
             ; fill the current line
-            ; Y will (still) hold MapLine (0) at the beginning
+            ; Y will (still) hold MapLine (255) at the beginning
 bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             lda MapLineH, y
             sta ZMapPtr + 1
@@ -94,6 +94,10 @@ bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             clc
             adc #$03
             sta ProxL
+            lda ShoreR      ; compute present width
+            sec
+            sbc ShoreL
+            sta ZWidth
             ldy #$13        ; right to left, start at last tile in the line
 bmscan:     ldx Seed        ; pick a random tile of four options
             inc Seed
@@ -125,9 +129,7 @@ bmscan:     ldx Seed        ; pick a random tile of four options
             and #%00111000
             ora ZPxScratch
 bmxflow:    sta ZPxScratch
-bmyflow:    lda ShoreR          ; work out y flow speed
-            sec                 ; depends on width of water
-            sbc ShoreL
+bmyflow:    lda ZWidth          ; work out y flow speed
             cmp #$08            ; narrow, fast water
             bcs :+
             lda #%11000000      ; 3 is fast
@@ -145,7 +147,7 @@ bmstore:    sta (ZMapPtr), y
             bpl bmscan
             ; make the shoreline wander
             ; check to see if we're already narrow
-            pla
+            lda ZWidth
             cmp #$06        ; if shore edges are at least 6 tiles apart, wander
             bcs bmlwander
             lda #<-1        ; otherwise set shore velocity to diverge (widen)

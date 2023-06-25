@@ -98,8 +98,8 @@ ZNewYOff    = $5E   ; postmovement Y offset
 ;ZTargDYTemp = $67   ; target vector Y temporary variable
 ;ZIsHero     = $68   ; nonzero if the hero is being processed, 0 otherwise
 
-ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
-
+;ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
+ZWidth      = $60   ; river width (used in buildmap)
 ZMapPtr     = $76
 
 ; interrupt handler

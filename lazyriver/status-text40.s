@@ -3,12 +3,12 @@
 ; top score and progress display
 ; occupies scan lines 00-07, text line 0.
 
-StatTextA:  .byte "  Level 00"
+StatText:   .byte "  Level 00"
             .byte "     lazy "
             .byte "river Scor"
             .byte "e 000000  "
 
-StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2C, $2C
+StatCol:    .byte $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2C, $2C
             .byte $2D, $2D, $2D, $2D, $2D, $3C, $3C, $3C, $3C, $3C
             .byte $3C, $3C, $3C, $3C, $3C, $2D, $2D, $2D, $2D, $2D
             .byte $2D, $2D, $2E, $2E, $2E, $2E, $2E, $2E, $2E, $2E
@@ -25,14 +25,14 @@ paintstat:  lda #$8F
             lda #>TextPageA
             sta ZPtrA + 1
             ldy #$27
-:           lda StatTextA, y
+:           lda StatText, y
             sta (ZPtrA), y
             dey
             bpl :-
             lda #>TextPageB     ; go to color space
             sta ZPtrA + 1
             ldy #$27
-:           lda StatColA, y
+:           lda StatCol, y
             sta (ZPtrA), y
             dey
             bpl :-
@@ -105,3 +105,78 @@ drawnumber: pha
             iny
             sta (ZNumPtr), y
             rts
+
+; show the title screen
+
+splash:     bit D_TEXT          ; A3 text
+            bit D_PAGEONE       ; be on page 1.
+            bit D_NOMIX         ; A3 text
+            bit D_LORES         ; A3 text
+            lda #$8F
+            sta ZPtrA + XByte
+            lda #<TextPageA     ; cheating a little because I'm on line 0
+            sta ZPtrA
+            lda #>TextPageA
+            sta ZPtrA + 1
+            ldy #$27
+:           lda SplashText, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            lda #>TextPageB     ; go to color space
+            sta ZPtrA + 1
+            ldy #$27
+:           lda SplashCol, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            rts
+
+; set up for printing loading status
+loadset:    lda #<TextPageA
+            clc
+            adc #$20            ; screen location of status
+            sta ZPtrA
+            lda #>TextPageA
+            sta ZPtrA + 1
+            lda #$8F
+            sta ZPtrA + XByte
+            rts
+            
+loadstata:  jsr loadset
+            ldy #$07
+:           lda LoadTextA, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            rts
+
+loadstatb:  jsr loadset
+            ldy #$07
+:           lda LoadTextB, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            rts
+
+loadstatc:  jsr loadset
+            ldy #$07
+:           lda LoadTextC, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            rts
+
+SplashText: .byte " Lazy Rive"
+            .byte "r  Paul Ha"
+            .byte "gstrom 202"
+            .byte "3  loading"
+
+SplashCol:  .byte $3C, $3C, $3C, $3C, $3C, $3C, $3C, $3C, $3C, $3C
+            .byte $3C, $3C, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D
+            .byte $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D
+            .byte $2D, $2D, $2E, $2E, $2E, $2E, $2E, $2E, $2E, $2E
+
+LoadTextA:  .byte " mapping"
+LoadTextB:  .byte "shifting"
+LoadTextC:  .byte "painting"

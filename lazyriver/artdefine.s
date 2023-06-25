@@ -88,100 +88,82 @@ buildtiles: lda #$14            ; start map tiles at $1400
             sta ZPtrSprA + 1
             ldy #$00
             sty ZPtrSprA
-bgtile:     tya
-            pha                 ; stash start index of tile line
-            ; store definition line in ZPixByteA-ZpixByteD
-            lda MapTiles, y
-            sta ZPixByteA
+:           ldx #$00
+:           lda MapTiles, y     ; copy sensible bytes into A-D
+            sta ZPixByteA, x
             iny
-            lda MapTiles, y
-            sta ZPixByteB
-            iny
-            lda MapTiles, y
-            sta ZPixByteC
-            iny
-            lda MapTiles, y
-            sta ZPixByteD
-            jsr xlatequad       ; translate into ZPixByteE-ZPixByteH
-            pla                 ; restore start index of tile line
+            inx
+            cpx #$04
+            bne :-
+            dey
+            jsr xlatequad       ; A-D (sensible) => E-H (bonkers)
+            ldx #$03
+:           lda ZPixByteE, x    ; copy bonkers bytes into asset memory
+            sta (ZPtrSprA), y
+            dey
+            dex
+            bpl :-
+            tya                 ; move to next line
+            clc
+            adc #$05
             tay
-            lda ZPixByteE
-            sta (ZPtrSprA), y
-            iny
-            lda ZPixByteF
-            sta (ZPtrSprA), y
-            iny
-            lda ZPixByteG
-            sta (ZPtrSprA), y
-            iny
-            lda ZPixByteH
-            sta (ZPtrSprA), y
-            iny                 ; move to next tile line
-            bne bgtile          ; assumes exactly 8 tiles
+            bne :---            ; 8 tiles, 8 lines of 4 bytes each = 256
             rts
-
+            
 ; transform the sprite graphics   
 ; note that ZPtrSprA has been set to bank 1 in setmemory         
 buildsprs:  lda #$15            ; start sprite data at $1500
             sta ZPtrSprA + 1
-            lda #$00            ; page A bytes
+            lda #$00
             sta ZPtrSprA
             lda #NumSprites     ; number of sprites to transform
             sta ZSprLeft
-            lda #>Sprites
+            lda #>Sprites       ; put current sprite line at the beginning of definition
             sta CurrSprLn + 1
             lda #<Sprites
             sta CurrSprLn
-bgsprites:  lda #$08
+bgsprite:   lda #$07            ; draw 8 lines
             sta ZSprLnsLeft
-bgsprite:   jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
-            lda #$07            ; then do 7 shifts
+bgsprline:  jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
+            lda #$06            ; then do 7 shifts
             sta ZShiftsLeft
-bgsprline:  jsr bgwrshift       ; write masks/data for this sprite line, this shift
-            dec ZShiftsLeft
-            beq bgsprldone      ; branch if all shifts done
-            ; advance pointer to next shift, this sprite, this line (ahead $100)
-            inc ZPtrSprA + 1
+bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this shift
             jsr bgshift         ; shift pixels in the workspace to the right
-            jmp bgsprline
+            inc ZPtrSprA + 1    ; advance to next shift for sprite/line (ahead $100)
+            dec ZShiftsLeft
+            bpl bgsprshift
             ; we have done all shifts and masks for this sprite, one line
-            ; now, move to the next line if there are more lines
-bgsprldone: lda CurrSprLn       ; advance pointer into sprite definition
+            ; pointer is now just past last shift
+            ; do next line in this sprite if more remain
+            lda CurrSprLn       ; advance pointer to sprite definition by 1 line
             clc
             adc #$04
             sta CurrSprLn
             bcc :+
             inc CurrSprLn + 1
- :          dec ZSprLnsLeft
-            beq bgsprdone       ; branch away if all lines are done
-            ; ZPtr is just beyond the end of the sprite line data block
-            ; next line is 6 pages back, 4 bytes forward
-            lda ZPtrSprA
+:           lda ZPtrSprA        ; advance to next line in target space
             clc
             adc #$04
             sta ZPtrSprA
-            lda ZPtrSprA + 1    ; back up $600 (e.g., from $1B to $15)
-            sec
-            sbc #$06
-            sta ZPtrSprA + 1
-            jmp bgsprite
-            ; we have done all lines for this sprite
-            ; now, if there are more sprites, do the next one
-bgsprdone:  dec ZSprLeft
-            beq bgalldone
-            ; move to the next sprite
-            ; ZPtr is just beyond the end of the sprite data block
-            ; next sprite is either $700 back (e.g., $1580) or here (e.g. $1C00)
-            lda ZPtrSprA
-            bmi :+              ; branch if we just did an odd sprite
-            lda ZPtrSprA + 1    ; back up $700, we just did an even sprite
+            lda ZPtrSprA + 1    ; back up $700 (e.g., from $1C to $15)
             sec
             sbc #$07
             sta ZPtrSprA + 1
-            jmp bgsprite        ; go do this next sprite
-            
-:           jmp bgsprites
-bgalldone:  rts
+            dec ZSprLnsLeft
+            bpl bgsprline
+            ; CurrSprLn is now pointing just past this sprite
+            ; ZPtrSprA has backed up, just past the first shift of this sprite
+            ; if ZPtrSprA is at $80, it is in the right place
+            ; but if it is at $00 then we need to advance $700.
+            lda ZPtrSprA
+            bmi :+
+            lda ZPtrSprA + 1
+            clc
+            adc #$07
+            sta ZPtrSprA + 1
+:           dec ZSprLeft        ; NumSprites is 1-based
+            bne bgsprite
+            rts
 
 ; shift all pixels in the 2-tile buffer to the right
 ; pi pj pk pl pm pn po pp
@@ -248,7 +230,6 @@ bgspradd:   lda INLINEADDR, y
 ; - ZPixByteI-P hold current (shifted) pixels
 ; - ZPtrSprA points to storage location for this sprite masks/data
 ; - ZPtrSprA etc. have been set to bank 1 in setmemory
-; ends with ZPtrSprA advanced by 4
 
 bgwrshift:  lda ZPtrSprA        ; set up the other three pointers
             clc                 ; nothing below risks setting carry
@@ -389,43 +370,43 @@ zeroclear:  pha
 ; call by putting the color codes of pixels 1-7 in
 ; ZPixByteA [12], ZPixByteB [34], ZPixByteC [56], ZPixByteD [7-]
 ; and the return bytes will be ZPixByteE-ZPixByteH
-xlatequad:
-            lda ZPixByteD       ; pixel 6 (sensible, in high nibble)
+; y is preserved, x and a are not
+xlatequad:  lda ZPixByteD       ; pixel 6 (sensible, in high nibble)
             lsr                 ; shift so bit seven is clear
             sta ZPxScratch      ; stash
             lda ZPixByteC       ; pixels 4-5 (sensible)
-            tay
+            tax
             and #$0E            ; pixel 5 (sensible, partial)
             lsr                 ; shift down below pixel 6 (bonkers)
             ora ZPxScratch      ; combine pixels 5 and 6
             sta ZPixByteH       ; output
-            tya
+            txa
             and #$01            ; the bit we missed from pixel 5 (sensible)
             lsr                 ; in carry
             ror                 ; in bit 8
             ror                 ; put it in bit 7
             sta ZPxScratch      ; stash
-            tya
+            txa
             and #$F0            ; pixel 4 (sensible)
             lsr
             lsr                 ; move it down to end at bit 6
             ora ZPxScratch      ; add in with pixel 5
             sta ZPxScratch      ; stash
             lda ZPixByteB       ; pixels 2-3 (sensible)
-            tay
+            tax
             and #$0C            ; pixel 3 (sensible, partial)
             lsr
             lsr                 ; move into lowest two bits
             ora ZPxScratch      ; add in with pixels 4-5
             sta ZPixByteG       ; output
-            tya
+            txa
             and #$07            ; pixel 3 (sensible, partial)
             lsr                 ; bit 1 and carry
             ror                 ; carry and bit 8
             ror                 ; bit 8 and bit 7
             ror                 ; move into bits 6 and 7
             sta ZPxScratch      ; stash
-            tya
+            txa
             and #$F0            ; pixel 2 (sensible)
             lsr
             lsr
@@ -433,21 +414,21 @@ xlatequad:
             ora ZPxScratch      ; add to pixel 3
             sta ZPxScratch      ; stash
             lda ZPixByteA       ; pixels 0-1 (sensible)
-            tay
+            tax
             and #$08            ; one bit of pixel 1
             lsr
             lsr
             lsr                 ; move to bit 1
             ora ZPxScratch      ; add in with pixels 2 and 3
             sta ZPixByteF       ; output
-            tya
+            txa
             and #$07            ; pixel 1 (sensible, partial)
             asl
             asl
             asl
             asl                 ; move to high nibble
             sta ZPxScratch      ; stash
-            tya
+            txa
             and #$F0            ; pixel 0 (sensible)
             lsr
             lsr

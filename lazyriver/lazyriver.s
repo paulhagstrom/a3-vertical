@@ -34,12 +34,6 @@ CodeStart:  jmp gameinit
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
-;PlayerX:    .byte   0                       ; X-coordinate (tile, 0-19) of player
-;PlayerXOff: .byte   0                       ; X offset of player from left of tile (0-7)
-;PlayerY:    .byte   0                       ; Y-coordinate of player on the map.
-;PlayerYOff: .byte   0                       ; Y offset of player from top of map tile.
-;VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
-;VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 GroundVel:  .byte   0                       ; Y-velocity of the ground (neg, 0, pos)
 PgOneTop:   .byte   0                       ; map row at top of the screen on page 1
 PgTwoTop:   .byte   0                       ; map row at top of the screen on page 2 (must follow PgOneTop)
@@ -325,47 +319,36 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
+            jsr splash          ; show title screen
             jsr setmemory       ; set up pointers
             jsr seedRandom      ; seed the "random" number list
+            jsr loadstata
             jsr buildmap        ; set up map data (in bank 1)
+            jsr loadstatb
             jsr buildgfx        ; define graphics assets
             ;jsr buildsfx        ; define sound effects
             lda #232            ; top map row when we start (makes bottom row 255)
             sta PgOneTop        ; top map row - page 1
             sta PgTwoTop        ; top map row - page 2
-            ;lda #$09            ; start player kind of in the middle
-            ;sta PlayerX         ; this is the X coordinate of the player on the map (0-19)
-            ;lda #128            ; Start down near the bottom of the screen
-            ;sta PlayerY         ; this is the Y coordinate of the player on the map (0-FF)
             sta TaskStep        ; unallocated task step to stall until game clock ticks
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
-            ;sta PlayerYOff      ; this is the Y offset (0-7) of the player from the top of the tile
-            ;sta PlayerXOff      ; this is the X offset (0-7) of the player from the left of the tile
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
-            ;sta VelocityX       ; player X velocity, can be negative, zero, or positive
-            ;sta VelocityY       ; player Y velocity, can be negative, zero, or positive
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
-            lda #$01            ; number of logs (0-based), this ought to be level-dependent
+            lda #$03            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
-            bit D_TEXT          ; A3 text
-            ; the following are set immediately by VBL/HBL handlers so they don't matter
-            ;bit D_PAGEONE       ; be on page 1.
-            ;bit D_NOMIX         ; A3 text
-            ;bit D_LORES         ; A3 text
             bit SS_XXN          ; start at smooth scroll offset zero
             bit SS_XNX
             bit SS_NXX
-            ; due to a MAME bug this is set at HBL, so doesn't matter here 
-            ;bit D_SCROLLON      ; turn on smooth scroll (can stay on throughout)
+            jsr loadstatc
             jsr paintpage       ; paint whole map (onto page 2, nonvisible page)
             jsr copypage        ; copy page 2 to page 1
             jsr paintstat       ; paint status area
