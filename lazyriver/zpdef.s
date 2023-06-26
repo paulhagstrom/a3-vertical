@@ -37,10 +37,6 @@ ZPgIndex    = $1A   ; nondisplayed page (0 if page 1 nondisplayed, or 1, used in
 ZScrOffset  = $1B   ; PgOneOff for drawing page (used in sprites)
 ZScrX       = $1C   ; byte to draw sprite on, twice x-coordinate (sprites)
 ZScrTop     = $1D   ; map row of the top line of the display (sprites)
-;ZSpriteOff  = $1A   ; used in sprites, difference between sprite and page offset
-;ZMapTemp    = $1B   ; temporary storage for a map byte being tested for collision
-;ZXXTemp     = $1C   ; temporary storage for second segment x-coordinate
-;ZFrame      = $1D   ; temporary storage for current animation frame
 
 ; scratch pointers
 ZPtrA       = $1E

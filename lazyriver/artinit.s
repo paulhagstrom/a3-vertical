@@ -102,13 +102,13 @@ buildsprs:  lda #$15            ; start sprite data at $1500
             sta ZPtrSprA + 1
             lda #$00
             sta ZPtrSprA
-            lda #NumSprites     ; number of sprite-frames to transform (1-based)
-            sta ZSprLeft
             lda #>Sprites       ; put current sprite line at the beginning of definition
             sta CurrSprLn + 1
             lda #<Sprites
             sta CurrSprLn
-bgsprite:   lda #$07            ; draw 8 lines
+            lda #NumSprites     ; number of sprites to transform (1-based)
+            sta ZSprLeft
+bgsprite:   lda #$0F            ; draw 16 lines (8 for frame 1, 8 for frame 2)
             sta ZSprLnsLeft
 bgsprline:  jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
             lda #$06            ; then do 7 shifts
@@ -130,28 +130,23 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             inc CurrSprLn + 1
 :           lda ZPtrSprA        ; advance to next line in target space
             clc
-            adc #$04            ; will not cross a boundary except at end of frame 2
+            adc #$04
             sta ZPtrSprA
-            lda ZPtrSprA + 1    ; back up $700 (e.g., from $1C to $15)
+            lda ZPtrSprA + 1    ; back up $700 to first shift (e.g., from $1C to $15)
             sec
             sbc #$07
             sta ZPtrSprA + 1
             dec ZSprLnsLeft
             bpl bgsprline
-            ; we have now done all lines for this sprite definition
+            ; we have now done all lines for this sprite, both frames
             ; definition pointer now points at next sprite start
-            ; if we just did frame 2, target pointer now points back to frame 1
-            ; if we just did frame 1, target pointer points to frame 2 (correct)
-            ; so if target pointer points to frame 1, advance $700 to next sprite.
-            ; TODO - once this is shown to work, maybe optimize out the
-            ; Duke of Yorkesque retreat and re-advancing $700.
-            lda ZPtrSprA
-            bmi :+              ; branch if we're at frame 2
-            lda ZPtrSprA + 1    ; if we're at frame 1, advance $700 to next sprite
+            ; target pointer wrapped around such that it has returned to start
+            ; so advance $700 to put it at the beginning of the next sprite.
+            lda ZPtrSprA + 1    ; advance $700 to next sprite
             clc
             adc #$07
             sta ZPtrSprA + 1
-:           dec ZSprLeft        ; NumSprites is 1-based
+            dec ZSprLeft        ; NumSprites is 1-based
             bne bgsprite
             rts
 

@@ -170,7 +170,7 @@ onesprite:  sty ZCurrSpr
             sbc ZScrOffset      ; decreased by screen offset
             clc
             adc (ZSprYOff), y   ; increased by sprite Y coordinate offset
-            bit ZPgIndex
+            ldx ZPgIndex
             beq :+
             sta (ZSprDrYTwo), y ; remember where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
@@ -190,7 +190,7 @@ onesprite:  sty ZCurrSpr
             lda (ZSprX), y      ; load x map position (0-18)
             asl
             sta ZScrX           ; byte to start drawing at (evens 0-38)
-            bit ZPgIndex
+            ldx ZPgIndex
             beq :+
             sta (ZSprDrXTwo), y ; remember where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
@@ -205,12 +205,12 @@ onesprite:  sty ZCurrSpr
             lda (ZSprAnim), y   ; current frame
             lsr                 ; into carry
             ror                 ; $80 (frame 2) or $00 (frame 1)
-            sta ZPtrSprA        ; data A (e.g., $1500)
-            adc #$20            ; data B (e.g., $1520)
+            sta ZPtrSprA        ; data A (e.g., $1500 or $1580)
+            adc #$20            ; data B (e.g., $1520 or $15A0)
             sta ZPtrSprB
-            adc #$20            ; mask A (e.g., $1540)
+            adc #$20            ; mask A (e.g., $1540 or $15C0)
             sta ZPtrMaskA
-            adc #$20            ; mask B (e.g., $1560)
+            adc #$20            ; mask B (e.g., $1560 or $15E0)
             sta ZPtrMaskB
             
             ldx #$00                ; start at line 0
@@ -251,48 +251,45 @@ spblitline: lda (ZPtrScrA), y       ; screen byte A
             lda ZPtrCacheB
             adc #$04
             sta ZPtrCacheB
-            jmp spblit
+            bne spblit              ; branch always
 spdone:     rts
 
 ; erase sprites on nonvisible page
 clrsprites: jsr pgcompute       ; set ZScrOffset, etc
             ; clear the player
             ldy #$7F
-            bit ZPgIndex        ; check to see if it was actually drawn
-            beq :+
-            lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
-            .byte $2C           ; opcode for BIT, eats next instruction
-:           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
-            bmi :+              ; branch away if it was not drawn
             jsr clrsprite
             ; clear the log sprites, in reverse (in case of overlap)
-:           ldy #$00
+            ldy #$00
 clrlog:     sty LogsLeft
-            bit ZPgIndex        ; check to see if it was actually drawn
-            beq :+
-            lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
-            .byte $2C           ; opcode for BIT, eats next instruction
-:           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
-            bmi :+              ; branch away if it was not drawn
             jsr clrsprite
             ldy LogsLeft
-:           cpy NumLogs
+            cpy NumLogs
             beq :+              ; branch away if we did the last one
             iny
             bne clrlog          ; branch always
 :           rts
           
 ; clear a single sprite
-; entry: Y holds the sprite number, A holds x-byte it was drawn at
+; entry: Y holds the sprite number
 ; assumes we have already verified that the sprite was drawn
 clrsprite:  sty ZCurrSpr
-            sta ZScrX           ; should be (prior) PlayerX (in tiles) x2
-            bit ZPgIndex
+            lda ZPgIndex        ; check to see if it was actually drawn
             beq :+
+            lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
+            bmi csdone          ; skip away if it was not drawn
+            sta ZScrX
+            lda #$FF            ; mark it (in advance) as erased
+            sta (ZSprDrXTwo), y
             lda (ZSprDrYTwo), y ; recall where we drew this (on page 2)
-            .byte $2C           ; opcode for BIT, eats next instruction
-:           lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
-            jsr adjcompute      ; compute the adjusted lines
+            jmp :++
+:           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
+            bmi csdone          ; skip if the sprite was not drawn
+            sta ZScrX           ; should be (prior) x (in tiles) x2
+            lda #$FF            ; mark it (in advance) as erased
+            sta (ZSprDrXOne), y
+            lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
+:           jsr adjcompute      ; compute the adjusted lines
             ldy ZCurrSpr        ; reload Y because adjcompute invalidated it
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA

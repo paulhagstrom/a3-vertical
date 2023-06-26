@@ -138,7 +138,7 @@ MapTiles:
 ;   darkblue        -> grey2        medblue, aqua       -> aqua
 ;   purple, pink    -> pink         lightblue, white    -> white
 
-NumSprites = 10     ; # of sprite-frames to process (1-based) (2 per sprite)
+NumSprites = 5     ; # of sprites to process (1-based) (2 frames per sprite)
 
 ; sprite names
 
