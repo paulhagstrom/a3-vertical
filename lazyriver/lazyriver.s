@@ -60,9 +60,6 @@ NumLogs:    .byte   0                       ; number of logs on map (zero based)
 ;           02- erase sprites on page B (1 tick?)
 ;           01- scroll page B to match page A (if they don't already match) (1 tick?)
 
-MoveDelay   = 5                             ; VBLs per game tick (3 seems about minimum possible)
-FlipTick    = 2                             ; Tick just after which the page flip happens.
-
 ; main game event loop
 
 ExitFlag = *+1                              ; keyboard handler makes this nonzero to trigger exit
@@ -74,56 +71,33 @@ KeyCaught = *+1                             ; keyboard interrupt pushes a caught
             jsr handlekey                   ; if there was a key, handle it
 VBLTick = *+1                               ; ticked down for each VBL, governs game speed
 :           lda #INLINEVAR                  ; wait for game clock to tick
-            bne dotask                      ; based on number of VBLs set in MoveDelay
+MoveDelay = *+1
+            cmp #INLINEVAR
+            bcc dotask                      ; based on number of VBLs set in MoveDelay
             ; on the game clock, do movement and update animation
-            lda #MoveDelay                  ; reset the game clock
+            lda #$00                        ; restart task list from the start
             sta VBLTick
-            lda #$01                        ; restart task list from the start
-            sta TaskStep
-TaskStep = *+1
+            sta TasksDone
+TasksDone = *+1
 dotask:     lda #INLINEVAR
-            cmp #$01                        ; do movement processing
-            bne :+
-            jsr domove
-            inc TaskStep
-            bne eventloop
-:           cmp #$02                        ; scroll ground on nonvisible page if needed
-            bne :+
-            jsr fixscroll
-            inc TaskStep
-            bne eventloop
-:           cmp #$03                        ; draw sprites on nonvisible page
-            bne :+
-            jsr setsprites
-            inc TaskStep
-            bne eventloop
-:           cmp #$04                        ; wait for FlipTick and flip pages
-            bne :+
-            lda #FlipTick
-            cmp VBLTick
-            bne eventloop
-            lda ShownPage
+            bne eventloop                   ; branch back if just waiting to flip
+            lda ShownPage                   ; flip pages
             eor #$01
             sta ShownPage
             jsr fixnudge
-            inc TaskStep
-            bne eventloop
-:           cmp #$05                        ; erase sprites on (newly) nonvisible page
-            bne :+
-            jsr clrsprites
-            inc TaskStep
-            bne eventloop
-:           cmp #$06                        ; sync ground scroll on nonvis page with vis page
-            bne :+
-            jsr syncscroll
-            inc TaskStep
-            bne eventloop
-:           cmp #$07                        ; draw score
-            bne :+
-            jsr drawstatus
-            inc TaskStep
-:           bne eventloop
-            
+            jsr clrsprites                  ; erase sprites on (newly) nonvisible page
+            jsr syncscroll                  ; sync ground scroll on nonvis page with vis page
+            jsr domove                      ; do movement processing
+            jsr drawstatus                  ; draw score
+            jsr fixscroll                   ; scroll ground on nonvisible page if needed
+            jsr setsprites                  ; draw sprites on nonvisible page
+            inc TasksDone
+            lda VBLTick                     ; check if VBLTick > MoveDelay
+            cmp MoveDelay
+            bcc eventloop                   
+            sta MoveDelay                   ; ensure consistent timing by increasing MoveDelay
+            jmp eventloop
+           
 alldone:    lda #$7F                        ;disable all interrupts
             sta RD_INTENAB
             sta RD_INTFLAG
@@ -333,7 +307,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #232            ; top map row when we start (makes bottom row 255)
             sta PgOneTop        ; top map row - page 1
             sta PgTwoTop        ; top map row - page 2
-            sta TaskStep        ; unallocated task step to stall until game clock ticks
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
@@ -341,8 +314,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
-            lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
-            sta VBLTick
             lda #$00            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
@@ -356,6 +327,9 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr copypage        ; copy page 2 to page 1
             jsr paintstat       ; paint status area
             jsr setupenv        ; arm interrupts
+            lda #$00
+            sta MoveDelay       ; game clock - setting number of VBLs per movement advance
+            sta VBLTick         ; last act is to reset VBLTick
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
 

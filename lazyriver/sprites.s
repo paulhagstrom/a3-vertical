@@ -46,7 +46,7 @@
 
 ; detect which page we are drawing to and set up some variables relating to that
 ; sets:
-;   ZScrOffset (scroll offset of the target screen),
+;   ZScrOffset (scroll offset of the target screen)
 ;   ZScrTop (map line corresponding to top line of screen)
 ;   ZCacheBase (offset into the half of the background cache that is relevant)
 ;   ZPageBase (offset into the half of the graphics memory that is relevant)
@@ -105,7 +105,7 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
 ; adjcompute must be called first (to set ZTileCache)
 ; enter with:
 ; - x being the line of the sprite we are drawing (0-8)
-; - ZScrX is the byte to start at drawing at (2 times x-coordinate)
+; - ZScrX is the byte to start at drawing at (2 times tile x-coordinate)
 ; x survives, a and y do not
 
 setgrptrs:  ldy ZTileCache, x   ; adjusted raster line for sprite line x
@@ -132,14 +132,14 @@ setsprites: jsr pgcompute       ; ZScrOffset, etc.
             ; draw the log sprites
             lda NumLogs         ; NumLogs is 0-based
             sta LogsLeft
-setlog:     ldy LogsLeft
-            jsr onesprite       ; draw the log
+setlog:     ldy LogsLeft        ; this is the sprite number
+            jsr putsprite       ; draw the log
             dec LogsLeft
             bpl setlog
-            ; do player
+            ; draw player
             ldy #$7F            ; player sprite is number 127
-            jsr onesprite       ; draw the player
-sproffscr:  rts                 ; cheat and use this rts for onesprite below
+            jsr putsprite       ; draw the player
+sproffscr:  rts                 ; cheat and use this rts for putsprite below
 
 ; if top of screen is 232, offset 0
 ; and sprite is on the map at 234, offset 4
@@ -154,7 +154,7 @@ sproffscr:  rts                 ; cheat and use this rts for onesprite below
 ; draw one sprite
 ; entry:
 ;   y = sprite number to draw
-onesprite:  sty ZCurrSpr
+putsprite:  sty ZCurrSpr
             lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             sec
             sbc ZScrTop

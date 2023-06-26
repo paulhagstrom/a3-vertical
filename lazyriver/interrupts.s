@@ -64,7 +64,7 @@ intvbl:     sta D_NOMIX         ;4 set screen to Apple III color text mode for a
             sta RE_T2CH         ;4
             lda #$01
             sta HBLatTop 
-            dec VBLTick         ;6 bump VBL countdown - in event loop code
+            inc VBLTick         ;6 bump VBL counter - in event loop code
             pla                 ;4
             rti                 ;6
 

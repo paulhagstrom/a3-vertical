@@ -108,7 +108,7 @@ buildsprs:  lda #$15            ; start sprite data at $1500
             sta CurrSprLn
             lda #NumSprites     ; number of sprites to transform (1-based)
             sta ZSprLeft
-bgsprite:   lda #$0F            ; draw 16 lines (8 for frame 1, 8 for frame 2)
+bgsprite:   lda #$07            ; draw 8 lines in the frame
             sta ZSprLnsLeft
 bgsprline:  jsr bgspreadln      ; read current line def (CurrSprLn) into workspace
             lda #$06            ; then do 7 shifts
@@ -138,8 +138,13 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             sta ZPtrSprA + 1
             dec ZSprLnsLeft
             bpl bgsprline
-            ; we have now done all lines for this sprite, both frames
-            ; definition pointer now points at next sprite start
+            ; we have now done all lines for this sprite, one frame
+            ; definition pointer now points at next frame/sprite start
+            ; if it is pointing at the second frame, targetL will be $80
+            ; if we already did the second frame it will have wrapped back to
+            ; the start
+            lda ZPtrSprA
+            bmi bgsprite        ; go back and do second frame
             ; target pointer wrapped around such that it has returned to start
             ; so advance $700 to put it at the beginning of the next sprite.
             lda ZPtrSprA + 1    ; advance $700 to next sprite
