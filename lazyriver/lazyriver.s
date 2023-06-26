@@ -295,6 +295,8 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
+            lda #$03            ; number of logs (0-based), this ought to be level-dependent
+            sta NumLogs
             jsr splash          ; show title screen
             jsr setmemory       ; set up pointers
             jsr seedRandom      ; seed the "random" number list
@@ -314,8 +316,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
-            lda #$01            ; number of logs (0-based), this ought to be level-dependent
-            sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress

@@ -18,10 +18,8 @@
 ; $5000-7EFF    sound effect data ($100 per effect) (planned)
 
 XByte       = $1601     ; Interp extended address offset (for ZP 1A)
-;Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
 INLINEVAR   = $33       ; mnemonic to remind me where variable is inline in code
 INLINEADDR  = $2020     ; mnemonic to remind me where variable is inline in code
-;Zero        = $00
 
 ; Used in interpreter (1A00) ZP.
 
@@ -89,6 +87,8 @@ ZNewYOff    = $5E   ; postmovement Y offset
 ZWidth      = $60   ; river width (used in buildmap)
 ZMapPtr     = $76
 
+ZNumPtr     = $7D   ; pointer for screen target for drawnumber
+
 ; interrupt handler
 ZSoundPtr   = $D2   ; current sample in background music
 ZFXPtr      = $D4   ; current sample in sound effect
@@ -119,11 +119,6 @@ ZPageBase   = $EB
 ZCacheBase  = $EC
 ZSprLnsLeft = $ED
 
-; Addresses are used when ZP is pointed at a display buffer
-; these are not in conflict with addresses in the 1A00 ZP,
-; generally limited to screen holes: 78-7F, F8-FF
-
-ZNumPtr     = $7D   ; pointer for screen target for drawnumber
 ZPxScratch  = $FF
 
 ; I/O softswitches

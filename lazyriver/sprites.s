@@ -71,10 +71,12 @@ pgcompute:  lda ShownPage
 
 ; compute the mapping between the absolute lines the sprite will occupy and
 ; the adjusted lines taking into account the page scroll.
+; And find the background cache
 ; reuses ZTileCache to hold the 8 adjusted lines
+; pgcompute must be called first (to set ZScrOffset and ZCacheBase)
+; ZCurrSpr must hold sprite number
 ; enter with A holding the screen line we're targeting for the first sprite line
-; pgcompute must be called first (to set ZScrOffset)
-; no registers survive
+; exits with Y holding sprite number
 adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             clc
             adc ZScrOffset
@@ -96,6 +98,18 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             inx
             cpx #$08
             bne :-
+            ; set up the cache base
+            ldy ZCurrSpr
+            lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
+            sta ZPtrCacheA
+            clc
+            adc #$20
+            sta ZPtrCacheB
+            lda (ZSprBgH), y
+            clc
+            adc ZCacheBase      ; $00 for page 1, $20 for page 2
+            sta ZPtrCacheA + 1  ; $10+ for page 1, $30+ for page 2
+            sta ZPtrCacheB + 1            
             rts
 
 ; set the pointers into the graphics page (ZPtrScrA for A, ZPtrScrB for B)
@@ -175,23 +189,12 @@ putsprite:  sty ZCurrSpr
             sta (ZSprDrYTwo), y ; remember where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
 :           sta (ZSprDrYOne), y ; remember where we drew this (on page 1)
-            jsr adjcompute      ; compute the adjusted lines into ZTileCache
-            ldy ZCurrSpr        ; reload Y because adjcompute invalidated it
-            lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
-            sta ZPtrCacheA
-            clc
-            adc #$20
-            sta ZPtrCacheB
-            lda (ZSprBgH), y
-            clc
-            adc ZCacheBase
-            sta ZPtrCacheA + 1
-            sta ZPtrCacheB + 1            
+            jsr adjcompute      ; compute the adjusted lines, locate bg cache
             lda (ZSprX), y      ; load x map position (0-18)
-            asl
+            asl                 ; x2 to get byte position
             sta ZScrX           ; byte to start drawing at (evens 0-38)
             ldx ZPgIndex
-            beq :+
+            beq :+              ; branch away if we're drawing on page 1
             sta (ZSprDrXTwo), y ; remember where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
 :           sta (ZSprDrXOne), y ; remember where we drew this (on page 1)
@@ -231,9 +234,24 @@ spblitline: lda (ZPtrScrA), y       ; screen byte A
             inx
             cpx #$08
             beq spdone              ; branch away if we have done all the lines
-            ; push all data pointers ahead 4 bytes
-            clc                     ; nothing below should set carry
-            lda ZPtrSprA
+            jsr pushcache           ; push cache pointers ahead 4 bytes
+            jsr pushdata            ; push data pointers ahead 4 bytes
+            jmp spblit
+spdone:     rts
+
+; push the cache pointers ahead 4 bytes
+pushcache:  clc                     ; nothing below should set carry
+            lda ZPtrCacheA
+            adc #$04
+            sta ZPtrCacheA
+            lda ZPtrCacheB
+            adc #$04
+            sta ZPtrCacheB
+            rts
+
+; push the data pointers ahead 4 bytes
+; assumes carry is already clear
+pushdata:   lda ZPtrSprA
             adc #$04
             sta ZPtrSprA
             lda ZPtrSprB
@@ -245,14 +263,7 @@ spblitline: lda (ZPtrScrA), y       ; screen byte A
             lda ZPtrMaskB
             adc #$04
             sta ZPtrMaskB
-            lda ZPtrCacheA
-            adc #$04
-            sta ZPtrCacheA
-            lda ZPtrCacheB
-            adc #$04
-            sta ZPtrCacheB
-            bne spblit              ; branch always
-spdone:     rts
+            rts
 
 ; erase sprites on nonvisible page
 clrsprites: jsr pgcompute       ; set ZScrOffset, etc
@@ -269,10 +280,9 @@ clrlog:     sty LogsLeft
             iny
             bne clrlog          ; branch always
 :           rts
-          
+
 ; clear a single sprite
 ; entry: Y holds the sprite number
-; assumes we have already verified that the sprite was drawn
 clrsprite:  sty ZCurrSpr
             lda ZPgIndex        ; check to see if it was actually drawn
             beq :+              ; branch away if we are dealing with page 1
@@ -289,18 +299,7 @@ clrsprite:  sty ZCurrSpr
             lda #$FF            ; mark it (in advance) as erased
             sta (ZSprDrXOne), y
             lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
-:           jsr adjcompute      ; compute the adjusted lines
-            ldy ZCurrSpr        ; reload Y because adjcompute invalidated it
-            lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
-            sta ZPtrCacheA
-            clc
-            adc #$20
-            sta ZPtrCacheB
-            lda (ZSprBgH), y
-            clc
-            adc ZCacheBase
-            sta ZPtrCacheA + 1
-            sta ZPtrCacheB + 1            
+:           jsr adjcompute      ; compute the adjusted lines, locate bg cache
             ldx #$00
 csblit:     jsr setgrptrs       ; set ZPtrScrA/B for pages A/B of nondisplayed page
             ldy #$03
@@ -312,15 +311,8 @@ csblitline: lda (ZPtrCacheA), y     ; saved background A
             bpl csblitline
             inx
             cpx #$08
-            beq csdone            
-            ; push all data pointers ahead 4 bytes
-            clc                 ; nothing below should set carry
-            lda ZPtrCacheA
-            adc #$04
-            sta ZPtrCacheA
-            lda ZPtrCacheB
-            adc #$04
-            sta ZPtrCacheB
+            beq csdone    
+            jsr pushcache           ; push cache pointers ahead 4 bytes
             jmp csblit
 csdone:     rts
 

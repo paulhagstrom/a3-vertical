@@ -93,9 +93,9 @@ spriteinit:
 placelog:   ldy Seed                ; pick a map row
             inc Seed
             lda Random, y
-            and #%00011111          ; in the last 32 rows
+            and #%00001111          ; in the last 16 rows
             clc
-            adc #222
+            adc #239
             tax
             lda MapLineL, x
             sta ZMapPtr
@@ -128,6 +128,8 @@ placelog:   ldy Seed                ; pick a map row
             inc Seed
             lda Random, x
             and #$03                ; between 0 and 3
+            clc
+            adc #$05                ; well, between 5 and 8
             sta (ZSprPeriod), y
             inx                     ; pick a log type
             inc Seed

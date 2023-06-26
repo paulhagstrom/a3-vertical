@@ -36,6 +36,8 @@ dmgndstay:
             ; move logs
             ldy NumLogs
 dmmovelog:  jsr ticksprite
+            lda (ZSprTick), y   ; maybe temporarily, only move on tick
+            bne :+
             jsr flowsprite
             jsr movesprite
             jsr collshore
@@ -43,13 +45,13 @@ dmmovelog:  jsr ticksprite
             jsr spriteupd
             ; it is known that ticksprite saves y in ZCurrSpr
             ldy ZCurrSpr
-            dey
+:           dey
             bpl dmmovelog
             
             rts
 
 ; tick animation for a single sprite
-; enter with Y holding the sprite number
+; enter with Y holding the sprite number, y continues to hold sprite number after
 ticksprite: sty ZCurrSpr
             lda (ZSprY), y      ; set ZOldY with map row
             sta ZOldY
@@ -85,17 +87,13 @@ flowsprite: ldx ZOldY           ; find map line
             eor #$FF            ; invert
             adc #$01            ; carry known to be clear
             sta ZYFlow          ; y flow is between -3 and 0
-            lda ZMapTmp         ; convert 3-bit signed to 7-bit signed
-            and #%00100000      ; x flow bits sign bit
-            beq :+
-            lda #%11111100
-:           sta ZXFlow
-            lda ZMapTmp
-            and #%00011000      ; x flow bits without sign bit
+            lda ZMapTmp         ; get x flow bits
+            and #%00111000
             lsr
             lsr
             lsr
-            ora ZXFlow
+            sec
+            sbc #$03
             sta ZXFlow          ; x flow speed is -3 to +3
             ldy ZCurrSpr
             ; update velocity based on flow vector
@@ -134,19 +132,19 @@ logcheckxv: lda (ZSprXV), y
 flowdone:   rts
 
 ; attempt to move the sprite according to its velocity vector
-; assumes y and ZCurrSpr hold the sprite number (after ticksprite)
+; assumes y holds the sprite number (after ticksprite)
 
 movesprite: lda (ZSprXV), y
             bmi loggoleft       ; branch if moving left
             clc                 ; moving right (or stationary), add to x offset
             adc (ZSprXOff), y
             cmp #$07
-            bcc hjustoff        ; branch if still within the same tile
+            bcc hjustoff        ; branch if still within the same tile (offset < 7)
             sbc #$07            ; wrap offset (carry known to be set)
             sta ZNewXOff
             lda ZOldX
             cmp #18
-            bcc :+              ; branch if we can move further right
+            bcc :+              ; branch if we can move further right X < 18
             sta ZNewX           ; stay in the same place
             lda #$06            ; stop at offset 6
             sta ZNewXOff
@@ -159,7 +157,7 @@ hjustoff:   sta ZNewXOff
             sta ZNewX
             jmp logvert
 loggoleft:  clc                 ; log is moving left
-            adc (ZSprXOff), y
+            adc (ZSprXOff), y   ; adding a negative number to offset
             bpl hjustoff        ; branch if still within the same tile
             clc
             adc #$07            ; wrap offset
@@ -171,7 +169,7 @@ loggoleft:  clc                 ; log is moving left
             lda #$00            ; stop at offset 0
             sta ZNewXOff
             beq logvert         ; branch always
-:           sbc #$01            ; carry is known to be set, decrease X
+:           sbc #$01            ; we can move left, dec X (carry is known to be set)
             sta ZNewX
 logvert:    
             lda (ZSprYV), y
@@ -196,8 +194,8 @@ vjustoff:   sta ZNewYOff
             lda ZOldY
             sta ZNewY
             jmp mvsprdone
-loggoup:    clc                 ; log is moving up
-            adc (ZSprYOff), y
+loggoup:    clc                 ; sprite is moving up
+            adc (ZSprYOff), y   ; adding a negative number to offset
             bpl vjustoff        ; branch if still within the same tile
             and #$07            ; wrap offset
             sta ZNewYOff

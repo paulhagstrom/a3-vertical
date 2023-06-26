@@ -113,21 +113,21 @@ bmscan:     ldx Seed        ; pick a random tile of four options
             dec ProxR           ; are we within 2 tiles of the right shore?
             bmi :+              ; branch away if we're further from the right shore
             lda ShoreRV         ; put right shore volecity in x flow velocity
-            asl
-            asl
-            asl
-            and #%00111000
-            ora ZPxScratch
-            jmp bmxflow
+            bpl bmxflowz        ; unless it is positive (widening)
+            bmi bmxflow         ; branch always
 :           cmp ProxL           ; are we within 2 tiles of the left shore?
-            bcs bmyflow         ; branch away if we're further away from left shore
+            bcs bmxflowz        ; branch away if we're further away from left shore
             lda ShoreLV         ; put left shore velocity in x flow velocity
+            bmi bmxflowz        ; unless it is negative (widening)
+bmxflowz:   lda #$00
+bmxflow:    clc
+            adc #$03            ; simplest to work with positive numbers
             asl
             asl
             asl
-            and #%00111000
+            ;and #%0011000       ; should not be necessary
             ora ZPxScratch
-bmxflow:    sta ZPxScratch
+            sta ZPxScratch
 bmyflow:    lda ZWidth          ; work out y flow speed
             cmp #$08            ; narrow, fast water
             bcs :+

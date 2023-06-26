@@ -65,15 +65,18 @@ drawstatus: lda #<TextPageA
             lda #$8F
             sta ZNumPtr + XByte
             ; DEBUG - BEGIN - REMOVE LATER
-            lda PgOneTop
+            ldy #127
+            lda (ZSprY), y
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr
-            lda PgOneOff
+            ldy #127
+            lda (ZSprYOff), y
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr
-            lda PgTwoTop
+            ldy #127
+            lda (ZSprBgH), y
             jmp drawnumber
             ; DEBUG - END
             ldx #$02
