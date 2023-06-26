@@ -55,7 +55,7 @@ ticksprite: sty ZCurrSpr
             sta ZOldY
             lda (ZSprX), y      ; set ZOldX with map column
             sta ZOldX
-            rts
+            ;rts
             lda (ZSprTick), y   ; decrease tick
             sec
             sbc #$01

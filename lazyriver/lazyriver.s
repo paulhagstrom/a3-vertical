@@ -314,7 +314,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
-            lda #$00            ; number of logs (0-based), this ought to be level-dependent
+            lda #$01            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to

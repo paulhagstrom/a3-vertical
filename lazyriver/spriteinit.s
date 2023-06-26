@@ -77,6 +77,7 @@ spriteinit:
             sta ZSprType + XByte
             sta ZSprTick + XByte
             sta ZSprAnim + XByte
+            sta ZSprPeriod + XByte
             sta ZSprDrXOne + XByte
             sta ZSprDrYOne + XByte
             sta ZSprDrXTwo + XByte
@@ -166,8 +167,7 @@ bmlogsdone: ldy #127                ; player is sprite 127
 ; sets SprH, zeros XV, YV ,YOff, Tick, marks as undrawn, computes BgL/H
 ; common code between logs and player
 ; enter with A being the sprite type and y being the sprite number
-sprfinish:
-            sta (ZSprType), y       ; A=sprite type
+sprfinish:  sta (ZSprType), y       ; A=sprite type
             asl
             asl
             asl                     ; x 8

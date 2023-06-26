@@ -140,13 +140,17 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             bpl bgsprline
             ; we have now done all lines for this sprite, one frame
             ; definition pointer now points at next frame/sprite start
-            ; if it is pointing at the second frame, targetL will be $80
-            ; if we already did the second frame it will have wrapped back to
-            ; the start
+            ; if we just did the first frame, targetL will be $20
+            ; if we just did the second frame, targetL will be $A0
             lda ZPtrSprA
-            bmi bgsprite        ; go back and do second frame
+            bmi :+              ; branch if we just finished second frame
+            lda #$80            ; move target to $80
+            sta ZPtrSprA
+            bmi bgsprite        ; branch always; go back and do second frame
             ; target pointer wrapped around such that it has returned to start
             ; so advance $700 to put it at the beginning of the next sprite.
+:           lda #$00            ; move target to $00
+            sta ZPtrSprA
             lda ZPtrSprA + 1    ; advance $700 to next sprite
             clc
             adc #$07
@@ -234,11 +238,11 @@ bgwrshift:  lda ZPtrSprA        ; set up the other three pointers
             sta ZPtrMaskA + 1
             sta ZPtrMaskB + 1
             ldy #$03            ; build mask for first half
-bgmaska:    lda ZPixByteI, y
+:           lda ZPixByteI, y
             jsr tomask
             sta ZPixByteA, y
             dey
-            bpl bgmaska
+            bpl :-
             jsr xlatequad
             ldy #$00
             lda ZPixByteE
@@ -251,11 +255,11 @@ bgmaska:    lda ZPixByteI, y
             lda ZPixByteH
             sta (ZPtrMaskB), y
             ldy #$03            ; build mask for second half
-bgmaskb:    lda ZPixByteM, y
+:           lda ZPixByteM, y
             jsr tomask
             sta ZPixByteA, y
             dey
-            bpl bgmaskb
+            bpl :-
             jsr xlatequad
             ldy #$02
             lda ZPixByteE
@@ -268,11 +272,11 @@ bgmaskb:    lda ZPixByteM, y
             lda ZPixByteH
             sta (ZPtrMaskB), y
             ldy #$03            ; translate data for first half
-bgspra:     lda ZPixByteI, y
+:           lda ZPixByteI, y
             jsr zeroclear
             sta ZPixByteA, y
             dey
-            bpl bgspra
+            bpl :-
             jsr xlatequad
             ldy #$00
             lda ZPixByteE
@@ -285,11 +289,11 @@ bgspra:     lda ZPixByteI, y
             lda ZPixByteH
             sta (ZPtrSprB), y
             ldy #$03            ; translate data for second half
-bgsprb:     lda ZPixByteM, y
+:           lda ZPixByteM, y
             jsr zeroclear
             sta ZPixByteA, y
             dey
-            bpl bgsprb
+            bpl :-
             jsr xlatequad
             ldy #$02
             lda ZPixByteE

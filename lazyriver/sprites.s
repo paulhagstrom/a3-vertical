@@ -275,7 +275,7 @@ clrlog:     sty LogsLeft
 ; assumes we have already verified that the sprite was drawn
 clrsprite:  sty ZCurrSpr
             lda ZPgIndex        ; check to see if it was actually drawn
-            beq :+
+            beq :+              ; branch away if we are dealing with page 1
             lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
             bmi csdone          ; skip away if it was not drawn
             sta ZScrX
