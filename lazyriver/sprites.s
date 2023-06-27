@@ -105,7 +105,7 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             clc
             adc #$20
             sta ZPtrCacheB
-            lda (ZSprBgH), y
+            lda (ZSprBgH), y    ; has a $1000 base
             clc
             adc ZCacheBase      ; $00 for page 1, $20 for page 2
             sta ZPtrCacheA + 1  ; $10+ for page 1, $30+ for page 2
@@ -118,7 +118,7 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
 ; pgcompute must be called first (to set ZPageBase)
 ; adjcompute must be called first (to set ZTileCache)
 ; enter with:
-; - x being the line of the sprite we are drawing (0-8)
+; - x being the line of the sprite we are drawing (0-7)
 ; - ZScrX is the byte to start at drawing at (2 times tile x-coordinate)
 ; x survives, a and y do not
 

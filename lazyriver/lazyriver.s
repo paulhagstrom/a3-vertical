@@ -295,10 +295,10 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$03            ; number of logs (0-based), this ought to be level-dependent
+            lda #$02            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
+            jsr setmemory       ; set up pointer pages
             jsr splash          ; show title screen
-            jsr setmemory       ; set up pointers
             jsr seedRandom      ; seed the "random" number list
             jsr loadstata
             jsr buildmap        ; set up map data (in bank 1)
