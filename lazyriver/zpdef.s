@@ -81,10 +81,10 @@ ZNewX       = $5B   ; postmovement X
 ZNewXOff    = $5C   ; postmovement X offset
 ZNewY       = $5D   ; postmovement Y
 ZNewYOff    = $5E   ; postmovement Y offset
-;ZIsHero     = $68   ; nonzero if the hero is being processed, 0 otherwise
 
-;ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
-ZWidth      = $60   ; river width (used in buildmap)
+ZRastCache  = $60   ; 8 bytes of adjusted y coordinates for drawing sprites
+
+ZWidth      = $68   ; river width (used in buildmap)
 ZMapPtr     = $76
 
 ZNumPtr     = $7D   ; pointer for screen target for drawnumber

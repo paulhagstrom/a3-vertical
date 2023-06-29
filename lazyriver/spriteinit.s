@@ -1,6 +1,8 @@
 ; lazyriver
 ; initialize sprites
 
+SprPlayer   = $10           ; sprite number for player
+
 LogsLeft:   .byte 0         ; logs left to place
 
 ; now place logs
@@ -145,10 +147,10 @@ placelog:   ldy Seed                ; pick a map row
             ; TODO - maybe try to keep them from landing on top of one another
 
             ; place the player
-bmlogsdone: ldy #127                ; player is sprite 127
+bmlogsdone: ldy #SprPlayer          ; player sprite
             lda #10                 ; in the middle
             sta (ZSprX), y
-            lda #240                ; near the bottom of the map
+            lda #250                ; near the bottom of the map
             sta (ZSprY), y
             lda #02                 ; animate every 3 frames
             sta (ZSprPeriod), y

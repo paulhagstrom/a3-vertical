@@ -26,7 +26,7 @@ dmgnddown:  lda #$FF            ; map will be scrolling down, subtracting from o
             beq dmplayer        ; if at the very top, do not move
 dmgndmove:  sta NeedScroll      ; 0=stop, neg=map down/dec off, pos=map up/inc off
             ; move player
-dmplayer:   ldy #127
+dmplayer:   ldy #SprPlayer
             jsr ticksprite
             ; do not subject the player to the flow vectors or shore collisions
             jsr movesprite
@@ -119,15 +119,15 @@ logcheckxv: lda (ZSprXV), y
             bvc :+
             eor #$80
 :           bmi :+              ; branch if XV is more negative than flow speed
-            lda (ZSprYV), y     ; decrease X velocity toward flow speed
+            lda (ZSprXV), y     ; decrease X velocity toward flow speed
             sec
             sbc #$01
-            sta (ZSprYV), y
+            sta (ZSprXV), y
             jmp flowdone
-:           lda (ZSprYV), y     ; increase X velocity toward flow speed
+:           lda (ZSprXV), y     ; increase X velocity toward flow speed
             clc
             adc #$01
-            sta (ZSprYV), y
+            sta (ZSprXV), y
 flowdone:   rts
 
 ; attempt to move the sprite according to its velocity vector
@@ -167,7 +167,8 @@ msgoleft:   clc                 ; log is moving left
             lda #$00            ; stop at offset 0
             sta ZNewXOff
             beq msgovert        ; branch always
-:           sbc #$01            ; we can move left, dec X (carry is known to be set)
+:           sec
+            sbc #$01            ; we can move left, dec X
             sta ZNewX
 msgovert:   lda (ZSprYV), y     ; handle movement in Y coordinate
             bmi msgoup          ; branch away if moving up
@@ -231,12 +232,12 @@ collshore:  ldx ZNewY           ; load map byte for proposed new position
             bne shoredone       ; done, movement lands in water, it can proceed
             ; desired movement failed, check if moving just in Y direction would work
             ldy ZOldX           ; check map data for original column
-            lda (ZMapPtr), y    ; load map data
+            lda (ZMapPtr), y    ; load map data for new Y, original X
             and #$04            ; check water bit
-            clc                 ; tell logshyok block to only zero X
+            clc                 ; tell logshyok block to only zero XV
             bne logshyok        ; branch away if vertical move lands in water
             ; moving just vertically fails, check if moving just in X direction works
-            ldy ZNewX           ; load map byte for new X, old Y
+            ldy ZNewX           ; load map byte for new X, original Y
             ldx ZOldY
             lda MapLineL, x
             sta ZMapPtr

@@ -70,9 +70,8 @@ pgcompute:  lda ShownPage
             rts
 
 ; compute the mapping between the absolute lines the sprite will occupy and
-; the adjusted lines taking into account the page scroll.
+; the adjusted lines taking into account the page scroll, put into ZRastCache
 ; And find the background cache
-; reuses ZTileCache to hold the 8 adjusted lines
 ; pgcompute must be called first (to set ZScrOffset and ZCacheBase)
 ; ZCurrSpr must hold sprite number
 ; enter with A holding the screen line we're targeting for the first sprite line
@@ -85,11 +84,11 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             ldx #$00
 :           lda ZPxScratch      ; retrieve sprite absolute raster
             and #%11111000      ; 8*(int(y/8))
-            sta ZTileCache, x
+            sta ZRastCache, x
             tya                 ; retrieve (y+offset)%8
             clc
-            adc ZTileCache, x   ; add to 8*(int(y/8))
-            sta ZTileCache, x   ; and record the adjusted line
+            adc ZRastCache, x   ; add to 8*(int(y/8))
+            sta ZRastCache, x   ; and record the adjusted line
             iny                 ; add one to y+offset
             tya
             and #$07            ; and mod 8
@@ -116,13 +115,13 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
 ; they will be accessed indirectly, so based at $0000 not $2000
 ; (1A: $0000, 1B: $2000, 2A: $4000, 2B: $6000)
 ; pgcompute must be called first (to set ZPageBase)
-; adjcompute must be called first (to set ZTileCache)
+; adjcompute must be called first (to set ZRastCache)
 ; enter with:
 ; - x being the line of the sprite we are drawing (0-7)
 ; - ZScrX is the byte to start at drawing at (2 times tile x-coordinate)
 ; x survives, a and y do not
 
-setgrptrs:  ldy ZTileCache, x   ; adjusted raster line for sprite line x
+setgrptrs:  ldy ZRastCache, x   ; adjusted raster line for sprite line x
             lda YHiresH, y      ; look up $20-based line start high byte
             clc
             adc ZPageBase       ; adjust for page ($20 or $60)
@@ -151,7 +150,7 @@ setlog:     ldy LogsLeft        ; this is the sprite number
             dec LogsLeft
             bpl setlog
             ; draw player
-            ldy #$7F            ; player sprite is number 127
+            ldy #SprPlayer      ; player sprite
             jsr putsprite       ; draw the player
 sproffscr:  rts                 ; cheat and use this rts for putsprite below
 
@@ -268,7 +267,7 @@ pushdata:   lda ZPtrSprA
 ; erase sprites on nonvisible page
 clrsprites: jsr pgcompute       ; set ZScrOffset, etc
             ; clear the player
-            ldy #$7F
+            ldy #SprPlayer
             jsr clrsprite
             ; clear the log sprites, in reverse (in case of overlap)
             ldy #$00
