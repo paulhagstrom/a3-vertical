@@ -53,33 +53,6 @@
 ; not also save the map coordinates of the sprite being erased
 ; (since the map coordinates might change between draw and erase).
 ;
-
-;If scroll is set to 2 and we
-; want to put it on lines 5-C, then we have to start drawing on line 7.
-;
-; sprite line 0 - display line 5 - adjusted line 7
-; sprite line 1 - display line 6 - adjusted line 0
-; sprite line 2 - display line 7 - adjusted line 1
-; sprite line 3 - display line 8 - adjusted line A
-; sprite line 4 - display line 9 - adjusted line B
-; sprite line 5 - display line A - adjusted line C
-; sprite line 6 - display line B - adjusted line D
-; sprite line 7 - display line C - adjusted line E
-;
-; That is, to draw on display line y, we draw to
-; 8*int(y/8) + (y+offset)%8
-;
-; To draw the sprite itself, we need to compute the targets and then move
-; the data.  The data is 64 bytes, and we want to load the background, stash
-; it somewhere, apply a mask, draw, and then store.  That's minimally
-; in the ballpark of 1280 cycles per sprite, probably will be somewhat
-; more.
-
-; when we draw a sprite, we will have its raster y-coordinate
-; and an x-coordinate (0-133, it can't go off the right edge)
-; we iterate line from 0 to 7 for the 8 lines of the sprite
-; meaning we are aiming to draw on raster y+line
-; int((y+line)/8) + (y+line+offset)%8
 ; horizontally, we use two tile-widths to hold the sprite
 ; we draw at 0-1 if sprite starts between 0 and 6
 ; we draw at 1-2 if sprite starts between 7 and 13, etc.
@@ -87,7 +60,7 @@
 ; starting at each possible position (e.g., between 0 and 6)
 ; the last one is 19-20 if sprite starts between 127 and 133.
 
-; when we draw a sprite, we need to retrieve the background
+; when we draw a sprite, we need to retrieve the background first
 ; and store it somewhere (64 bytes), AND it with the mask,
 ; OR it with the graphics and store it on the page.
 ; and to erase, store the cached background back to the page.
@@ -122,7 +95,7 @@ pgparams:   lda ShownPage
 ; calculate the raster line where the sprite starts
 ; enter with y holding the sprite number
 ; exits with starting raster line in A (and X invalidated), y persists
-; carry set if sprite was offscreen, clear if A is valid
+; also exits with carry clear if A was valid, or set if sprite was offscreen
 calcraster: lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             sec
             sbc ZScrTop
@@ -150,9 +123,10 @@ sproffscr:  sec
 ; raster computation and cache location are combined because both drawing and erasing
 ; sprites need to do both.  Not logically related, but saves an extra jsr/rts trip.
 ; enter with A holding the (absolute) raster line we're targeting for the first sprite line
+; that should be computed with calcraster or by retrieving it from the cache
 ; assumes ZCurrSpr has already been set with sprite number
-; will put the adjusted lines into ZRastCache (8 bytes), set ZPtrCacheA/B
-; exits with Y holding sprite number
+; will put the adjusted lines into ZRastCache (8 bytes), and set ZPtrCacheA/B
+; exits with Y holding sprite number, A and X are invalidated
 sprparams:  ldx #$00
             beq sprrastb        ; branch always, first one already passed in
 sprrasta:   sec
@@ -198,7 +172,6 @@ sprrastb:   sta ZRastCache, x
 ; - x being the line of the sprite we are drawing (0-7)
 ; - ZScrX is the byte to start at drawing at (2 times tile x-coordinate)
 ; x survives, a and y do not
-
 setgrptrs:  ldy ZRastCache, x   ; adjusted raster line for sprite line x
             lda YHiresH, y      ; look up $20-based line start high byte
             clc
@@ -218,7 +191,6 @@ setgrptrs:  ldy ZRastCache, x   ; adjusted raster line for sprite line x
 ; draw the sprites in reverse order, ending with the player
 ; in case of overlap, lower number sprites will be on top,
 ; player atop all.
-
 setsprites: jsr pgparams        ; get the page parameters (ZScrOffset, etc.)
             ; draw the log sprites
             lda NumLogs         ; NumLogs is 0-based
@@ -232,52 +204,35 @@ setlog:     ldy LogsLeft        ; this is the sprite number
             jsr putsprite       ; draw the player
             rts
 
-; if top of screen is 232, offset 4
-; and sprite is on the map at 234, offset 2
-; we find where we want to draw it
-; 234-232 = 2 map lines below the top
-; so rough distance down is 2 * 8 = 16 pixels
-; plus 8 to skip past the text line = 24 pixels
-; the sprite is two pixels further down from the top of the map line = 26
-; but the screen has rolled back 4 pixels = 22
-;
-; then we start drawing the sprite at line
-; 8 + 8 * (234 - 232) + 4 = 28
-; if screen offset were 2, then only 6 lines of 232 are displayed.
-; so sprite starts off the top of the screen if it were on 232 with offset < 2 
-; so actual target raster is:
-; 8 + (8 * (ytile - ytop)) + yoffset - scroffset
-; if that is less than 8, sprite is at least partially offscreen
-; similarly if ytile - ytop is >=22 and offsets not 0, sprite is partially offscreen
 ; draw one sprite
 ; entry:
 ;   y = sprite number to draw            
-putsprite:  sty ZCurrSpr
+putsprite:  sty ZCurrSpr        ; stash the sprite number where we can find it
             jsr calcraster      ; compute raster for top line of sprite
             bcs spdone          ; branch away if it is not onscreen
-            ldx ZPgIndex
-            beq :+
-            sta (ZSprDrYTwo), y ; remember where we drew this (on page 2)
-            .byte $2C           ; opcode for BIT, eats next instruction
-:           sta (ZSprDrYOne), y ; remember where we drew this (on page 1)
-            jsr sprparams       ; compute the adjusted lines, locate bg cache
+            pha                 ; stash it
             lda (ZSprX), y      ; load x map position (0-18)
             asl                 ; x2 to get byte position
-            sta ZScrX           ; byte to start drawing at (evens 0-38)
+            sta ZScrX           ; byte to start drawing at (evens 0-38)            
             ldx ZPgIndex
-            beq :+              ; branch away if we're drawing on page 1
-            sta (ZSprDrXTwo), y ; remember where we drew this (on page 2)
-            .byte $2C           ; opcode for BIT, eats next instruction
-:           sta (ZSprDrXOne), y ; remember where we drew this (on page 1)
+            beq :+              ; branch away if we are drawing to page 1
+            sta (ZSprDrXTwo), y ; remember X where we drew this (on page 2)
+            pla
+            sta (ZSprDrYTwo), y ; remember Y where we drew this (on page 2)
+            jmp :++
+:           sta (ZSprDrXOne), y ; remember X where we drew this (on page 1)
+            pla
+            sta (ZSprDrYOne), y ; remember Y where we drew this (on page 1)
+:           jsr sprparams       ; compute the adjusted lines, locate bg cache
             lda (ZSprSprH), y   ; page where the sprite data starts
             clc
-            adc (ZSprXOff), y   ; x shift
+            adc (ZSprXOff), y   ; add shift for x offset
             sta ZPtrSprA + 1
             sta ZPtrSprB + 1
             sta ZPtrMaskA + 1
             sta ZPtrMaskB + 1
             lda (ZSprAnim), y   ; current frame
-            lsr                 ; into carry
+            lsr
             ror                 ; $80 (frame 2) or $00 (frame 1)
             sta ZPtrSprA        ; data A (e.g., $1500 or $1580)
             adc #$20            ; data B (e.g., $1520 or $15A0)
@@ -286,7 +241,6 @@ putsprite:  sty ZCurrSpr
             sta ZPtrMaskA
             adc #$20            ; mask B (e.g., $1560 or $15E0)
             sta ZPtrMaskB
-            
             ldx #$00                ; start at line 0
 spblit:     jsr setgrptrs           ; set ZPtrScrA/B for pages A/B based on line
             ldy #$03
@@ -355,11 +309,11 @@ cssdone:    rts
 ; clear a single sprite
 ; entry: Y holds the sprite number
 clrsprite:  sty ZCurrSpr
-            lda ZPgIndex        ; check to see if it was actually drawn
+            lda ZPgIndex
             beq :+              ; branch away if we are dealing with page 1
             lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
             bmi csdone          ; skip away if it was not drawn
-            sta ZScrX
+            sta ZScrX           ; should be (prior) x (in tiles) x2
             lda #$FF            ; mark it (in advance) as erased
             sta (ZSprDrXTwo), y
             lda (ZSprDrYTwo), y ; recall where we drew this (on page 2)
