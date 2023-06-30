@@ -81,13 +81,16 @@ ZNewX       = $5B   ; postmovement X
 ZNewXOff    = $5C   ; postmovement X offset
 ZNewY       = $5D   ; postmovement Y
 ZNewYOff    = $5E   ; postmovement Y offset
+ZDebugN     = $5F   ; current log position
 
 ZRastCache  = $60   ; 8 bytes of adjusted y coordinates for drawing sprites
 
 ZWidth      = $68   ; river width (used in buildmap)
-ZMapPtr     = $76
 
-ZNumPtr     = $7D   ; pointer for screen target for drawnumber
+ZMapPtr     = $6A
+ZNumPtr     = $6C   ; pointer for screen target for drawnumber
+
+ZDebugLog   = $70   ; stash for logging
 
 ; interrupt handler
 ZSoundPtr   = $D2   ; current sample in background music

@@ -4,8 +4,57 @@
 ; A sprite will be a 7x8 block, which corresponds to 32 bytes.  But given that
 ; it can be at any x-coordinate, we need to consider it to be a 14x8 block,
 ; 64 bytes.  We will pre-shift them so that we have these bytes ready to go.
-; To put a sprite at an absolute y-coordinate on the screen requires taking
-; the smooth scroll parameter into account.  If scroll is set to 2 and we
+; The y-coordinates are made additionally complicated due to the smooth
+; scroll.
+;
+; Sprites live on the map, which means they have an x and y coordinate in map
+; tiles, and then an x and y offset from the top left of the map tile.
+; Their position on the screen is determined by these coordinates in conjunction
+; with the map row responsible for the first line of the screen and the smooth
+; scroll offset of the screen.
+;
+; Concretely: suppose the top row is map line 232, the screen has scrolled 4
+; and the sprite (Y) is at map line 234, offset 2.  The first hires line is
+; on line 8, since the top 8 lines are in text mode showing the score.
+; The first group of 8 lines display 4 lines of row 232 and 4 lines of row 233.
+; The next group of 8 lines display 4 lines of row 233 and 4 lines of row 234.
+; This second group will contain the sprite's start line, 2 from the top of 234.
+; Lines  8-11 contain row 233 lines 0-3  1
+; Lines 12-15 contain row 232 lines 4-7  0
+; Lines 16-19 contain row 234 lines 0-3  2
+; Lines 21-23 contain row 233 lines 4-7  1
+; Lines 24-27 contain row 235 lines 0-3  3
+; Lines 28-31 contain row 234 lines 4-7  2
+; So: the sprite's start line (234+2) is line 18.
+; and it extends 8 lines: 18 19 28 29 30 31 24 25
+; crazy right?
+; operationally, it is:
+;                       yoffset 2               3   4   5   6   7   8   9
+;                   yoffset % 8 2               3   4   5   6   7   0   1
+; (y - top)                     234-232 = 2     2   2   2   2   2   2   2
+; - 1 if yoffset%8 < scroffset  2 < 4? Y, = 1   1   2   2   2   2   1   1
+; * 8                           1 * 8 = 8       8   16  16  16  16  8   8
+; + yoffset                     + 2 = 10        11  20  21  22  23  16  17
+; + 8 (score line)              + 8 = 18        19  28  29  30  31  24  25
+; 
+; we don't really need to do that computation for every line, we can do it
+; for the first one and then get the other lines incrementally, like:
+;
+; prior                 18  19  28  29  30  31  24
+; - 8 (score line)      10  11  20  21  22  23  16
+; + 1                   11  12  21  22  23  24  17
+; (%8                   3   4   5   6   7   0   1)
+; +8 if %8 = scroffset  11  20  21  22  23  24  17
+; -8 if %8 = 0          11  20  21  22  23  16  17
+; +8 (score line)       19  28  29  30  31  24  25
+; 
+; which also means that we can compute the start line when we draw
+; the sprite, then save it for use when we erase the sprite, and
+; not also save the map coordinates of the sprite being erased
+; (since the map coordinates might change between draw and erase).
+;
+
+;If scroll is set to 2 and we
 ; want to put it on lines 5-C, then we have to start drawing on line 7.
 ;
 ; sprite line 0 - display line 5 - adjusted line 7
@@ -45,59 +94,88 @@
 ; so we need 64 bytes per visible sprite for background cache.
 
 ; detect which page we are drawing to and set up some variables relating to that
+; called before starting to draw any sprites, no entry requirements
 ; sets:
 ;   ZScrOffset (scroll offset of the target screen)
 ;   ZScrTop (map line corresponding to top line of screen)
 ;   ZCacheBase (offset into the half of the background cache that is relevant)
 ;   ZPageBase (offset into the half of the graphics memory that is relevant)
 ;   ZPgIndex (0 if we are targeting page 1, 1 if we are targeting page 2)
-; returns with x holding ZPgIndex
-pgcompute:  lda ShownPage
+; returns with x holding ZPgIndex, y unaffected
+pgparams:   lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
+            sta ZPgIndex
             tax
-            lsr                 ; carry
-            ror                 ; $80
-            ror                 ; $40
+            lsr
+            ror
+            ror
             sta ZPageBase       ; $40 if nonvisible is page 2, $00 if page 1
-            ror                 ; $20
+            ror
             sta ZCacheBase      ; $20 if nonvisible is page 2, $00 if page 1
-            lda PgOneOff, x     ; keep track of the scroll value of the screen
+            lda PgOneOff, x     ; scroll value of the screen
             sta ZScrOffset
-            lda PgOneTop, x     ; keep track of the map line at the top of screen
+            lda PgOneTop, x     ; map line at the top of screen
             sta ZScrTop
-            stx ZPgIndex
             rts
 
-; compute the mapping between the absolute lines the sprite will occupy and
-; the adjusted lines taking into account the page scroll, put into ZRastCache
-; And find the background cache
-; pgcompute must be called first (to set ZScrOffset and ZCacheBase)
-; ZCurrSpr must hold sprite number
-; enter with A holding the screen line we're targeting for the first sprite line
+; calculate the raster line where the sprite starts
+; enter with y holding the sprite number
+; exits with starting raster line in A (and X invalidated), y persists
+; carry set if sprite was offscreen, clear if A is valid
+calcraster: lda (ZSprY), y      ; check to see if Y coordinate is onscreen
+            sec
+            sbc ZScrTop
+            bcc sproffscr       ; sprite is above top screen line, skip
+            cmp #22             ; conservative for now, would be ok if offsets are 0
+            bcs sproffscr       ; sprite is below the bottom screen line, skip
+            tax                 ; stash difference
+            lda (ZSprYOff), y   ; sprite Y coordinate offset (will be mod 8 already)
+            cmp ZScrOffset      ; is Y offset < smooth scroll parameter?
+            bcs :+              ; branch away if not
+            dex                 ; subtract 1 from difference is so
+:           txa
+            asl
+            asl
+            asl                 ; adjusted difference * 8
+            adc (ZSprYOff), y   ; + Y offset (carry known to be clear)
+            adc #$08            ; skip past the top text line (carry still clear)
+            bcc :+              ; branch always
+sproffscr:  sec
+:           rts
+
+; lookup/compute the sprite paramters (background cache location and screen lines)
+; when computing the screen lines, must take screen's smooth scroll into account
+; pgparams must be called earlier (to set ZScrOffset and ZCacheBase)
+; raster computation and cache location are combined because both drawing and erasing
+; sprites need to do both.  Not logically related, but saves an extra jsr/rts trip.
+; enter with A holding the (absolute) raster line we're targeting for the first sprite line
+; assumes ZCurrSpr has already been set with sprite number
+; will put the adjusted lines into ZRastCache (8 bytes), set ZPtrCacheA/B
 ; exits with Y holding sprite number
-adjcompute: sta ZPxScratch      ; stash sprite absolute raster
+sprparams:  ldx #$00
+            beq sprrastb        ; branch always, first one already passed in
+sprrasta:   sec
+            sbc #$07            ; -8 to adjust for score line, +1 to move to next
+            pha
+            and #$07            ; mod 8
+            tay                 ; stash mod 8
+            pla
+            cpy ZScrOffset      ; mod 8 = smooth scroll paramter?
+            bne :+              ; branch away if not
             clc
-            adc ZScrOffset
-            and #$07            ; (y+offset)%8
-            tay                 ; stash in y
-            ldx #$00
-:           lda ZPxScratch      ; retrieve sprite absolute raster
-            and #%11111000      ; 8*(int(y/8))
-            sta ZRastCache, x
-            tya                 ; retrieve (y+offset)%8
-            clc
-            adc ZRastCache, x   ; add to 8*(int(y/8))
-            sta ZRastCache, x   ; and record the adjusted line
-            iny                 ; add one to y+offset
-            tya
-            and #$07            ; and mod 8
-            tay                 ; put it back in y for next time around
-            inc ZPxScratch      ; increase display line
+            adc #$08            ; +8 if mod 8 = smooth scroll parameter
+:           cpy #$00            ; mod 8 = 0?
+            bne :+              ; branch away if not zero
+            sec
+            sbc #$08            ; -8 if mod 8 was zero
+:           clc
+            adc #$08            ; +8 to adjust for score line
+sprrastb:   sta ZRastCache, x
             inx
             cpx #$08
-            bne :-
-            ; set up the cache base
+            bne sprrasta
+            ; set up the pointers to the background cache for this sprite
             ldy ZCurrSpr
             lda (ZSprBgL), y    ; set ZPtrCacheA/B to background cache address
             sta ZPtrCacheA
@@ -107,15 +185,15 @@ adjcompute: sta ZPxScratch      ; stash sprite absolute raster
             lda (ZSprBgH), y    ; has a $1000 base
             clc
             adc ZCacheBase      ; $00 for page 1, $20 for page 2
-            sta ZPtrCacheA + 1  ; $10+ for page 1, $30+ for page 2
+            sta ZPtrCacheA + 1
             sta ZPtrCacheB + 1            
             rts
 
 ; set the pointers into the graphics page (ZPtrScrA for A, ZPtrScrB for B)
 ; they will be accessed indirectly, so based at $0000 not $2000
 ; (1A: $0000, 1B: $2000, 2A: $4000, 2B: $6000)
-; pgcompute must be called first (to set ZPageBase)
-; adjcompute must be called first (to set ZRastCache)
+; pgparams must be called first (to set ZPageBase)
+; sprparams must be called first (to set ZRastCache)
 ; enter with:
 ; - x being the line of the sprite we are drawing (0-7)
 ; - ZScrX is the byte to start at drawing at (2 times tile x-coordinate)
@@ -141,7 +219,7 @@ setgrptrs:  ldy ZRastCache, x   ; adjusted raster line for sprite line x
 ; in case of overlap, lower number sprites will be on top,
 ; player atop all.
 
-setsprites: jsr pgcompute       ; ZScrOffset, etc.
+setsprites: jsr pgparams        ; get the page parameters (ZScrOffset, etc.)
             ; draw the log sprites
             lda NumLogs         ; NumLogs is 0-based
             sta LogsLeft
@@ -152,10 +230,17 @@ setlog:     ldy LogsLeft        ; this is the sprite number
             ; draw player
             ldy #SprPlayer      ; player sprite
             jsr putsprite       ; draw the player
-sproffscr:  rts                 ; cheat and use this rts for putsprite below
+            rts
 
-; if top of screen is 232, offset 0
-; and sprite is on the map at 234, offset 4
+; if top of screen is 232, offset 4
+; and sprite is on the map at 234, offset 2
+; we find where we want to draw it
+; 234-232 = 2 map lines below the top
+; so rough distance down is 2 * 8 = 16 pixels
+; plus 8 to skip past the text line = 24 pixels
+; the sprite is two pixels further down from the top of the map line = 26
+; but the screen has rolled back 4 pixels = 22
+;
 ; then we start drawing the sprite at line
 ; 8 + 8 * (234 - 232) + 4 = 28
 ; if screen offset were 2, then only 6 lines of 232 are displayed.
@@ -166,29 +251,16 @@ sproffscr:  rts                 ; cheat and use this rts for putsprite below
 ; similarly if ytile - ytop is >=22 and offsets not 0, sprite is partially offscreen
 ; draw one sprite
 ; entry:
-;   y = sprite number to draw
+;   y = sprite number to draw            
 putsprite:  sty ZCurrSpr
-            lda (ZSprY), y      ; check to see if Y coordinate is onscreen
-            sec
-            sbc ZScrTop
-            bcc sproffscr       ; sprite is above top screen line, skip
-            cmp #22             ; conservative for now, would be ok if offsets are 0
-            bcs sproffscr       ; sprite is below the bottom screen line, skip
-            asl                 ; compute target y raster
-            asl
-            asl                 ; distance in map lines from top, times 8
-            clc
-            adc #$08            ; plus 8 (after score text line)
-            sec
-            sbc ZScrOffset      ; decreased by screen offset
-            clc
-            adc (ZSprYOff), y   ; increased by sprite Y coordinate offset
+            jsr calcraster      ; compute raster for top line of sprite
+            bcs spdone          ; branch away if it is not onscreen
             ldx ZPgIndex
             beq :+
             sta (ZSprDrYTwo), y ; remember where we drew this (on page 2)
             .byte $2C           ; opcode for BIT, eats next instruction
 :           sta (ZSprDrYOne), y ; remember where we drew this (on page 1)
-            jsr adjcompute      ; compute the adjusted lines, locate bg cache
+            jsr sprparams       ; compute the adjusted lines, locate bg cache
             lda (ZSprX), y      ; load x map position (0-18)
             asl                 ; x2 to get byte position
             sta ZScrX           ; byte to start drawing at (evens 0-38)
@@ -265,7 +337,7 @@ pushdata:   lda ZPtrSprA
             rts
 
 ; erase sprites on nonvisible page
-clrsprites: jsr pgcompute       ; set ZScrOffset, etc
+clrsprites: jsr pgparams        ; get the page parameters (ZScrOffset, etc.)
             ; clear the player
             ldy #SprPlayer
             jsr clrsprite
@@ -275,10 +347,10 @@ clrlog:     sty LogsLeft
             jsr clrsprite
             ldy LogsLeft
             cpy NumLogs
-            beq :+              ; branch away if we did the last one
+            beq cssdone         ; branch away if we did the last one
             iny
             bne clrlog          ; branch always
-:           rts
+cssdone:    rts
 
 ; clear a single sprite
 ; entry: Y holds the sprite number
@@ -298,7 +370,7 @@ clrsprite:  sty ZCurrSpr
             lda #$FF            ; mark it (in advance) as erased
             sta (ZSprDrXOne), y
             lda (ZSprDrYOne), y ; recall where we drew this (on page 1)
-:           jsr adjcompute      ; compute the adjusted lines, locate bg cache
+:           jsr sprparams       ; compute the adjusted lines, locate bg cache
             ldx #$00
 csblit:     jsr setgrptrs       ; set ZPtrScrA/B for pages A/B of nondisplayed page
             ldy #$03

@@ -81,10 +81,12 @@ MoveDelay = *+1
 TasksDone = *+1
 dotask:     lda #INLINEVAR
             bne eventloop                   ; branch back if just waiting to flip
-            lda ShownPage                   ; flip pages
+            lda ShownPage                   ; flip pages and fix the smooth scroll value
             eor #$01
             sta ShownPage
             jsr fixnudge
+            lda #$00
+            sta ZDebugN                     ; restart log
             jsr clrsprites                  ; erase sprites on (newly) nonvisible page
             jsr syncscroll                  ; sync ground scroll on nonvis page with vis page
             jsr domove                      ; do movement processing
@@ -271,7 +273,25 @@ setmemory:  lda #$81                    ; bank 1
             sta ZPtrScrA + XByte        ; graphics A (e.g., 0000-1FFF)
             sta ZPtrScrB + XByte        ; graphics B (e.g., 2000-3FFF)
             rts
-            
+
+; write to the debugging log
+DebugY:     .byte 00
+DebugLog = $300
+
+debuglog:   pha
+            sty DebugY
+            ldy ZDebugN
+            sta DebugLog, y
+            inc ZDebugN
+            ;lda ZDebugN
+            ;cmp #$60                    ; don't let it exceed $60 bytes
+            ;bcc debugout
+            ;lda #$00
+            ;sta ZDebugN
+debugout:   ldy DebugY
+            pla
+            rts
+
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
@@ -316,6 +336,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
+            sta ZDebugN         ; current debugging point
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
