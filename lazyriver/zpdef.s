@@ -65,32 +65,27 @@ ZSprDrYTwo  = $4A   ; pointer to Y raster sprite drawn in
 ZSprBgL     = $4C   ; pointer to low byte of pointer to sprite cached background
 ZSprBgH     = $4E   ; pointer to high byte of pointer to sprite cached background
 ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprType)
+ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
+ZSprMvTick  = $54   ; pointer to countdown to next movement
 
-; pointers used during movement processing
-;ZOldPtr     = $50   ; original position of element moving
-;ZNewPtr     = $52   ; new position of element moving
 ; variables used during movement processing
-ZMapTmp     = $55   ; map byte
-ZCurrSpr    = $56   ; current sprite being processed
-ZYFlow      = $57   ; map y flow
-ZXFlow      = $58   ; map x flow
+ZMapTmp     = $75   ; map byte
+ZCurrSpr    = $76   ; current sprite being processed
+ZYFlow      = $77   ; map y flow
+ZXFlow      = $78   ; map x flow
+ZOldX       = $79   ; original premovement X
+ZOldY       = $7A   ; original premovement Y
+ZNewX       = $7B   ; postmovement X
+ZNewXOff    = $7C   ; postmovement X offset
+ZNewY       = $7D   ; postmovement Y
+ZNewYOff    = $7E   ; postmovement Y offset
 
-ZOldX       = $59   ; original premovement X
-ZOldY       = $5A   ; original premovement Y
-ZNewX       = $5B   ; postmovement X
-ZNewXOff    = $5C   ; postmovement X offset
-ZNewY       = $5D   ; postmovement Y
-ZNewYOff    = $5E   ; postmovement Y offset
-ZDebugN     = $5F   ; current log position
+ZRastCache  = $80   ; 8 bytes of adjusted y coordinates for drawing sprites
 
-ZRastCache  = $60   ; 8 bytes of adjusted y coordinates for drawing sprites
+ZWidth      = $88   ; river width (used in buildmap)
 
-ZWidth      = $68   ; river width (used in buildmap)
-
-ZMapPtr     = $6A
-ZNumPtr     = $6C   ; pointer for screen target for drawnumber
-
-ZDebugLog   = $70   ; stash for logging
+ZMapPtr     = $8A
+ZNumPtr     = $8C   ; pointer for screen target for drawnumber
 
 ; interrupt handler
 ZSoundPtr   = $D2   ; current sample in background music

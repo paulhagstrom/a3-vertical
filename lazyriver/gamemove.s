@@ -35,7 +35,7 @@ dmplayer:   ldy #SprPlayer
             ; move logs
             ldy NumLogs         ; this is the sprite number
 dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
-            lda (ZSprTick), y   ; only move on tick - TODO: temporary, implement speed
+            lda (ZSprMvTick), y ; only move when delay countdown reaches zero
             bne :+
             jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
             ; TODO consider adding a random wobble to flow
@@ -65,6 +65,13 @@ ticksprite: sty ZCurrSpr
             lda (ZSprAnim), y   ; switch frames
             eor #$01
             sta (ZSprAnim), y
+:           lda (ZSprMvTick), y ; decrease movement countdown tick
+            sec
+            sbc #$01
+            sta (ZSprMvTick), y
+            bpl :+              ; not time to move yet
+            lda (ZSprDelay), y ; reset movement tick timer
+            sta (ZSprMvTick), y
 :           rts
 
 ; update sprite's velocity based on flow vector of the tile it is in

@@ -274,19 +274,6 @@ setmemory:  lda #$81                    ; bank 1
             sta ZPtrScrB + XByte        ; graphics B (e.g., 2000-3FFF)
             rts
 
-; write to the debugging log
-;DebugY:     .byte 00
-;DebugLog = $300
-
-;debuglog:   pha
-;            sty DebugY
-;            ldy ZDebugN
-;            sta DebugLog, y
-;            inc ZDebugN
-;debugout:   ldy DebugY
-;            pla
-;            rts
-
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
@@ -310,7 +297,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$01            ; number of logs (0-based), this ought to be level-dependent
+            lda #$08            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             jsr setmemory       ; set up pointer pages
             jsr splash          ; show title screen
@@ -331,7 +318,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
-            sta ZDebugN         ; current debugging point
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress

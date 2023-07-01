@@ -1,7 +1,7 @@
 ; lazyriver
 ; initialize sprites
 
-SprPlayer   = $10           ; sprite number for player
+SprPlayer   = $7F           ; sprite number for player
 
 LogsLeft:   .byte 0         ; logs left to place
 
@@ -69,6 +69,13 @@ spriteinit:
             lda #$00
             sta ZSprSprH
             stx ZSprSprH + 1
+            lda #$80
+            sta ZSprDelay
+            stx ZSprDelay + 1
+            inx                 ; $C00
+            lda #$00
+            sta ZSprMvTick
+            stx ZSprMvTick + 1
             lda #$82            ; bank 2
             sta ZSprX + XByte
             sta ZSprY + XByte
@@ -87,6 +94,8 @@ spriteinit:
             sta ZSprBgL + XByte
             sta ZSprBgH + XByte
             sta ZSprSprH + XByte
+            sta ZSprDelay + XByte
+            sta ZSprMvTick + XByte
             
             ; place some logs
             lda NumLogs
@@ -126,6 +135,13 @@ placelog:   ldy Seed                ; pick a map row
             lda Random, x
             and #$01                ; between 0 and 1
             sta (ZSprAnim), y
+            inx                     ; pick a movement delay (speed control)
+            inc Seed
+            lda Random, x
+            and #$03                ; between 0 and 3
+            clc
+            adc #$03                ; well, between 3 and 6
+            sta (ZSprDelay), y
             inx                     ; pick a animation period
             inc Seed
             lda Random, x
@@ -186,6 +202,7 @@ sprfinish:  sta (ZSprType), y       ; A=sprite type
             sta (ZSprXOff), y       ; x offset from tile edge
             sta (ZSprYOff), y       ; y offset from tile edge
             sta (ZSprTick), y       ; current animation tick
+            sta (ZSprMvTick), y     ; current movement tick
             lda #$FF
             sta (ZSprDrXOne), y     ; mark as undrawn
             sta (ZSprDrXTwo), y     ; mark as undrawn
