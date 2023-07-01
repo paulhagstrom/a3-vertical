@@ -69,6 +69,21 @@ ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
 ZSprMvTick  = $54   ; pointer to countdown to next movement
 
 ; variables used during movement processing
+ZCollChkA   = $65   ; collision check scratch A
+ZCollChkB   = $66   ; collision check scratch B
+ZCurrYStart = $67   ; current sprite y comparison start
+ZRefYStart  = $68   ; reference sprite y comparison start
+ZOldYLine   = $69   ; reference sprite y line
+ZOldYOff    = $6A   ; reference sprite offset
+ZCurrXStart = $6B   ; current sprite - x column comparison start
+ZCurrXEnd   = $6C   ; current sprite - x column comparison end
+ZRefXStart  = $6D   ; reference sprite - x column comparison start
+ZRefXEnd    = $6E   ; reference sprite - x column comparison end
+ZOverXLeft  = $6F   ; overlap window left
+ZOverXRight = $70   ; overlap window right
+ZOverYTop   = $71   ; overlap window top
+ZOverYBot   = $72   ; overlap window bottom
+ZRefSpr     = $74   ; reference sprite in a pair, testing collisions
 ZMapTmp     = $75   ; map byte
 ZCurrSpr    = $76   ; current sprite being processed
 ZYFlow      = $77   ; map y flow

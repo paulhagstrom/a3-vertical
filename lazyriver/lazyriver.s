@@ -297,7 +297,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$08            ; number of logs (0-based), this ought to be level-dependent
+            lda #$04            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             jsr setmemory       ; set up pointer pages
             jsr splash          ; show title screen

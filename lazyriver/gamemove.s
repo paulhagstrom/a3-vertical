@@ -308,8 +308,6 @@ shoredone:  rts
 ;     Ref Y line = Ref Y * 8 + Ref Yoffset
 ;     Curr Y line = Curr Y * 8 + Cur Yoffset
 ;     Ydiff = Curr Y line - Ref Y line
-;     if Ydiff < 0 then Curr is higher than Ref
-;       Curr Y start = 8-YDiff
 ;     if YDiff > 0 then Ref is higher than Cur
 ;       Ref Y start = YDiff
 ;       Curr Y start = Curr Y
@@ -328,6 +326,13 @@ shoredone:  rts
 ; move to next Ref
 
 ; to handle collisions between sprite A and B
+; ideally we can make it seem physically plausible, they should push each other around
+; so if we have XVA YVA and XVB YVB and they collide, 
+; XVa -2  YVa -2  XVb 1  YVb -1  (a heading northwest fast, b heading northeast slow)
+; I think frictionless reality might just tranfer their velocities to each other
+; but practically it is hard to distinguish one log from another so I think it will
+; just look like they pass through each other.  Still, maybe I'll start there.
+; 
 ; change the sign of XV and YV (bounce it)
 ; move each of XV and YV closer to zero
 
@@ -350,28 +355,210 @@ shoredone:  rts
 ; otherwise one X is higher than the other, so we AND the second byte of the
 ; lower mask with the first byte of the higher mask.
 ; 
-checkcoll:  
+
+collskip:   jmp ccnext
+checkcoll:  rts
             ldy NumLogs         ; this is the sprite number
-            sty ZRefSprite      
-            sty ZCurrSprite
-            ldy ZRefSprite
+            sty ZRefSpr
+            sty ZCurrSpr
+ccrefloop:  lda (ZSprY), y      ; establish the overlap window
+            sta ZOldY
+            sta ZOverYTop
+            sta ZOverYBot
+            dec ZOverYTop
+            inc ZOverYBot       ; bottom is the first row outside
+            inc ZOverYBot       ; overlap window
+            lda (ZSprX), y
+            sta ZOldX
+            sta ZOverXLeft
+            sta ZOverXRight
+            dec ZOverXLeft
+            inc ZOverXRight     ; right is the first column outside
+            inc ZOverXRight     ; overlap window
+            lda (ZSprYOff), y
+            sta ZOldYOff
+            lda (ZSprSprH), y   ; locate the reference mask
+            clc
+            adc (ZSprXOff), y
+            sta ZPtrMaskA + 1
+            sta ZPtrMaskB + 1
+            lda (ZSprAnim), y
+            lsr
+            ror
+            adc #$40            ; mask offset (carry known to be clear)
+            sta ZPtrMaskA
+            adc #$20
+            sta ZPtrMaskB
+cccurloop:  ldy ZCurrSpr
             lda (ZSprY), y
-            sta ZRefY
-            ldy ZCurrSprite
-            rts
-
-
-
-dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
-            lda (ZSprMvTick), y ; only move when delay countdown reaches zero
+            cmp ZOverYTop
+            bcc collskip        ; outside the overlap window
+            cmp ZOverYBot
+            bcs collskip        ; outside the overlap window
+            sta ZNewY
+            lda (ZSprX), y
+            cmp ZOverXLeft
+            bcc collskip        ; outside the overlap window
+            cmp ZOverXRight
+            bcs collskip        ; outside the overlap window
+            sta ZNewX
+            cmp ZOldX           ; how do the x columns relate?
             bne :+
-            jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
-            ; TODO consider adding a random wobble to flow
-            jsr movesprite      ; enter with sprite in Y, exits with it still there
-            jsr collshore       ; uses ZCurrSpr
-            jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
-:           dey
-            bpl dmmovelog
+            ; x columns are the same, compare both tiles
+            lda #$00
+            sta ZRefXStart
+            sta ZCurrXStart
+            lda #$01
+            sta ZRefXEnd
+            sta ZCurrXEnd
+            bne ccy             ; branch always
+:           bcc :+
+            ; reference x column precedes current x column
+            lda #$00
+            sta ZCurrXStart
+            sta ZCurrXEnd
+            lda #$01
+            sta ZRefXStart
+            sta ZRefXEnd
+            bne ccy             ; branch always
+            ; reference x column follows current x column
+ :          lda #$01
+            sta ZCurrXStart
+            sta ZCurrXEnd
+            lda #$00
+            sta ZRefXStart
+            sta ZRefXEnd
+            ; work out which lines need to be compared
+ccy:        lda ZNewY
+            sec
+            sbc ZOldY           ; difference in map rows
+            bne ccxrows
+            ; map rows are the same, need to compare offsets
+            lda (ZSprYOff), y
+            sec
+            sbc ZOldYOff
+            bpl :+
+            ; new is higher up (smaller Y) than old
+            eor #$FF            ; invert
+            clc
+            adc #$01
+            sta ZCurrYStart
+            lda ZOldYOff
+            sta ZRefYStart
+            bpl cccomp          ; branch always
+:           ; new is lower down (or same; larger or same Y) compared to old
+            sta ZRefYStart
+            lda ZNewY
+            sta ZCurrYStart
+            bpl cccomp          ; branch always
+            ; rows are different
+ccxrows:    
+            bcc :+
+            ; new is higher up (smaller Y) than old
+            
+:
+            ; new is lower down (or same; larger or same Y) compared to old
+            ; YOU ARE HERE BRAIN IS MUSH
+cccomp:
+            lda (ZSprSprH), y   ; locate the currsprite mask
+            clc
+            adc (ZSprXOff), y
+            sta ZPtrSprA + 1    ; use ZPtrSpr for the currsprite mask
+            sta ZPtrSprB + 1
+            lda (ZSprAnim), y
+            lsr
+            ror
+            adc #$40            ; mask offset (carry known to be clear)
+            sta ZPtrSprA
+            adc #$20
+            sta ZPtrSprB
+            ; check if the masks collide
+cctile:     lda ZCurrYStart     ; curr line
+            asl
+            asl
+            asl                 ; x8
+            adc ZCurrXStart
+            sta ZCollChkB
+            lda ZRefYStart      ; ref line
+            asl
+            asl
+            asl                 ; 8
+            adc ZRefXStart
+            sta ZCollChkA
+ccandmasks: ldy ZCollChkA
+            lda (ZPtrMaskA), y
+            ldy ZCollChkB
+            and (ZPtrSprA), y
+            bne gotcoll
+            ldy ZCollChkA
+            lda (ZPtrMaskB), y
+            ldy ZCollChkB
+            and (ZPtrSprB), y
+            bne gotcoll
+            
+            ldy ZCurrYStart
+            iny
+            cpy #$08
+            bcs :+              ; branch away if done with curr lines
+            sty ZCurrYStart
+            ldy ZRefYStart
+            iny
+            cpy #$08
+            bcs :+              ; branch away if done with ref lines
+            sty ZRefYStart
+            lda ZCollChkA
+            clc
+            adc #$08
+            sta ZCollChkA
+            lda ZCollChkB
+            clc
+            adc #$08
+            sta ZCollChkB
+            jmp ccandmasks
+:           lda ZCurrXStart
+            ora ZRefXStart
+            bne ccnext          ; branch away if we have done a second tile
+            inc ZCurrXStart
+            inc ZRefXStart
+            jmp cctile            
+            ; got a collision    
+gotcoll:
+            ; for now just bounce
+            ldy ZCurrSpr
+            lda (ZSprXV), y
+            eor #$FF
+            clc
+            adc #$01
+            sta (ZSprXV), y
+            lda (ZSprYV), y
+            eor #$FF
+            clc
+            adc #$01
+            sta (ZSprYV), y
+            ldy ZRefSpr
+            lda (ZSprXV), y
+            eor #$FF
+            clc
+            adc #$01
+            sta (ZSprXV), y
+            lda (ZSprYV), y
+            eor #$FF
+            clc
+            adc #$01
+            sta (ZSprYV), y
+ccnext:
+            dec ZCurrSpr
+            bmi :+
+            jmp cccurloop
+:           dec ZRefSpr
+            beq :+
+            ldy ZRefSpr
+            sty ZCurrSpr
+            jmp ccrefloop
+:           
+            ; at this point we have evaluated all non-player sprites
+            ; against one another but have not yet evaluated
+            ; the player against the other sprites
             rts
 
 ; update the sprite's coordinates based on what survived of the proposal
