@@ -106,7 +106,7 @@ calcraster: lda (ZSprY), y      ; check to see if Y coordinate is onscreen
             lda (ZSprYOff), y   ; sprite Y coordinate offset (will be mod 8 already)
             cmp ZScrOffset      ; is Y offset < smooth scroll parameter?
             bcs :+              ; branch away if not
-            dex                 ; subtract 1 from difference is so
+            dex                 ; subtract 1 from difference if so
 :           txa
             asl
             asl
@@ -164,8 +164,8 @@ sprrastb:   sta ZRastCache, x
             rts
 
 ; set the pointers into the graphics page (ZPtrScrA for A, ZPtrScrB for B)
-; they will be accessed indirectly, so based at $0000 not $2000
-; (1A: $0000, 1B: $2000, 2A: $4000, 2B: $6000)
+; they will be accessed indirectly via bank 8F
+; (1A: $2000, 1B: $4000, 2A: $6000, 2B: $8000)
 ; pgparams must be called first (to set ZPageBase)
 ; sprparams must be called first (to set ZRastCache)
 ; enter with:
@@ -176,10 +176,10 @@ setgrptrs:  ldy ZRastCache, x   ; adjusted raster line for sprite line x
             lda YHiresH, y      ; look up $20-based line start high byte
             clc
             adc ZPageBase       ; adjust for page ($20 or $60)
-            sta ZPtrScrB + 1    ; addressing within bank 0, this is B half
-            sec
-            sbc #$20            ; back to A half ($00 or $40)
-            sta ZPtrScrA + 1    ; in bank 0, A half
+            sta ZPtrScrA + 1    ; the A half for XByte 8F
+            clc
+            adc #$20            ; the B half ($00 or $40)
+            sta ZPtrScrB + 1
             lda YHiresL, y
             clc
             adc ZScrX           ; byte to draw on
@@ -312,14 +312,14 @@ clrsprite:  sty ZCurrSpr
             lda ZPgIndex
             beq :+              ; branch away if we are dealing with page 1
             lda (ZSprDrXTwo), y ; recall where we drew this (on page 2)
-            bmi csdone          ; skip away if it was not drawn
+            bmi csdone          ; skip away if the sprite was not drawn
             sta ZScrX           ; should be (prior) x (in tiles) x2
             lda #$FF            ; mark it (in advance) as erased
             sta (ZSprDrXTwo), y
             lda (ZSprDrYTwo), y ; recall where we drew this (on page 2)
             jmp :++
 :           lda (ZSprDrXOne), y ; recall where we drew this (on page 1)
-            bmi csdone          ; skip if the sprite was not drawn
+            bmi csdone          ; skip away if the sprite was not drawn
             sta ZScrX           ; should be (prior) x (in tiles) x2
             lda #$FF            ; mark it (in advance) as erased
             sta (ZSprDrXOne), y

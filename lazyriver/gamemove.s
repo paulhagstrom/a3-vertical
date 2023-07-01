@@ -27,22 +27,22 @@ dmgnddown:  lda #$FF            ; map will be scrolling down, subtracting from o
 dmgndmove:  sta NeedScroll      ; 0=stop, neg=map down/dec off, pos=map up/inc off
             ; move player
 dmplayer:   ldy #SprPlayer
-            jsr ticksprite
+            jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             ; do not subject the player to the flow vectors or shore collisions
-            jsr movesprite
-            jsr collsprite
-            jsr spriteupd
+            jsr movesprite      ; enter with sprite in Y, exits with it still there
+            jsr collsprite      ; nop
+            jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
             ; move logs
             ldy NumLogs         ; this is the sprite number
-dmmovelog:  jsr ticksprite
+dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             lda (ZSprTick), y   ; only move on tick - TODO: temporary, implement speed
             bne :+
-            jsr flowsprite
+            jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
             ; TODO consider adding a random wobble to flow
-            jsr movesprite
-            jsr collshore
-            jsr collsprite
-            jsr spriteupd
+            jsr movesprite      ; enter with sprite in Y, exits with it still there
+            jsr collshore       ; uses ZCurrSpr
+            jsr collsprite      ; nop
+            jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
 :           dey
             bpl dmmovelog
             

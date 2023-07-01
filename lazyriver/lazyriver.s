@@ -85,13 +85,13 @@ dotask:     lda #INLINEVAR
             eor #$01
             sta ShownPage
             jsr fixnudge
-            lda #$00
-            sta ZDebugN                     ; restart log
+            ;lda #$00
+            ;sta ZDebugN                     ; restart log
             jsr clrsprites                  ; erase sprites on (newly) nonvisible page
             jsr syncscroll                  ; sync ground scroll on nonvis page with vis page
+            jsr fixscroll                   ; scroll ground on nonvisible page if needed
             jsr domove                      ; do movement processing
             jsr drawstatus                  ; draw score
-            jsr fixscroll                   ; scroll ground on nonvisible page if needed
             jsr setsprites                  ; draw sprites on nonvisible page
             inc TasksDone
             lda VBLTick                     ; check if VBLTick > MoveDelay
@@ -269,28 +269,23 @@ setmemory:  lda #$81                    ; bank 1
             lda #$82                    ; bank 2
             sta ZPtrCacheA + XByte      ; background cache A (sprite)
             sta ZPtrCacheB + XByte      ; background cache B (sprite)
-            lda #$80                    ; bank 0
+            lda #$8F                    ; bank 0 in $2000-A000
             sta ZPtrScrA + XByte        ; graphics A (e.g., 0000-1FFF)
             sta ZPtrScrB + XByte        ; graphics B (e.g., 2000-3FFF)
             rts
 
 ; write to the debugging log
-DebugY:     .byte 00
-DebugLog = $300
+;DebugY:     .byte 00
+;DebugLog = $300
 
-debuglog:   pha
-            sty DebugY
-            ldy ZDebugN
-            sta DebugLog, y
-            inc ZDebugN
-            ;lda ZDebugN
-            ;cmp #$60                    ; don't let it exceed $60 bytes
-            ;bcc debugout
-            ;lda #$00
-            ;sta ZDebugN
-debugout:   ldy DebugY
-            pla
-            rts
+;debuglog:   pha
+;            sty DebugY
+;            ldy ZDebugN
+;            sta DebugLog, y
+;            inc ZDebugN
+;debugout:   ldy DebugY
+;            pla
+;            rts
 
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
