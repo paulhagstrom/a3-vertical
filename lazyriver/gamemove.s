@@ -30,7 +30,6 @@ dmplayer:   ldy #SprPlayer
             jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             ; do not subject the player to the flow vectors or shore collisions
             jsr movesprite      ; enter with sprite in Y, exits with it still there
-            jsr collsprite      ; nop
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
             ; move logs
             ldy NumLogs         ; this is the sprite number
@@ -41,11 +40,20 @@ dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             ; TODO consider adding a random wobble to flow
             jsr movesprite      ; enter with sprite in Y, exits with it still there
             jsr collshore       ; uses ZCurrSpr
-            jsr collsprite      ; nop
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
 :           dey
             bpl dmmovelog
-            
+            ; we want to check collisions post-movement,
+            ; but we also want to check collisions all at once so that we
+            ; can check each sprite pairing only once
+            ; problem is what to do if there is a collision
+            ; we can bounce their velocities rather than stop them but there
+            ; will be a tick where they actually overlap
+            ; if we decrease their velocities they'll stop while overlapped
+            ; maybe this is ok for logs against each other
+            ; hoping that this won't result in a log bouncing ashore
+            ; probably want to treat collisions with player differently
+            jsr checkcoll
             rts
 
 ; tick animation for a single sprite and put sprite number in ZCurrSpr
@@ -70,7 +78,7 @@ ticksprite: sty ZCurrSpr
             sbc #$01
             sta (ZSprMvTick), y
             bpl :+              ; not time to move yet
-            lda (ZSprDelay), y ; reset movement tick timer
+            lda (ZSprDelay), y  ; reset movement tick timer
             sta (ZSprMvTick), y
 :           rts
 
@@ -274,16 +282,97 @@ logshxok:   ldy ZCurrSpr
             sta ZNewYOff
 shoredone:  rts
 
-; check if this sprite collides with other sprites
-; we are here only if movement didn't get blocked by a shore already
-; for checking against sprites, it is going to be more elaborate.
-; may require checking each sprite against all others.
-; for each sprite A
-; for each sprite B
-; if masks cannot overlap, skip ahead
-; AND through the area of sprite overlap, if anything is nonzero, collision
-; some delicate math to determine these "overlap" conditions
-collsprite: rts
+; check the sprite collision matrix
+; if we're checking each sprite against each other, we want to do this
+; all at once so that we only check each pairing one time
+; we will check against the player separately
+; logic:
+; for each sprite Ref
+;   overlap window: top = Ref Y - 7, bottom = Ref Y + 7
+;   overlap window: left = Ref X - 2, right = Ref X + 2
+;   for each sprite Curr (from 0 to Ref)
+;     skip ahead if:
+;       Curr Y < overlap top or Curr Y > overlap bottom
+;       Curr X < overlap left or Curr X > overlap right
+;     if Curr X = Ref X
+;       Curr X start = Curr X group 1
+;       Curr X end = Curr X group 2
+;       Ref X start = Ref X group 1
+;       Ref X end = Ref X group 2
+;     else if Curr X < Ref X
+;       Curr X start and end = Curr X group 2
+;       Ref X start and end = Ref X group 1
+;     else (Ref X > Curr X)
+;       Curr X start and end = Curr X group 1
+;       Ref X start and end = Ref X group 2
+;     Ref Y line = Ref Y * 8 + Ref Yoffset
+;     Curr Y line = Curr Y * 8 + Cur Yoffset
+;     Ydiff = Curr Y line - Ref Y line
+;     if Ydiff < 0 then Curr is higher than Ref
+;       Curr Y start = 8-YDiff
+;     if YDiff > 0 then Ref is higher than Cur
+;       Ref Y start = YDiff
+;       Curr Y start = Curr Y
+;     if YDiff < 0 then Cur is higher than Ref
+;       Ref Y start = Ref Y
+;       Curr Y start = -YDiff
+;     start at Curr Y start and Ref Y start
+;       if Curr X start = Ref X start, collision = AND masks for first byte of each
+;       if Curr X start = 2, collision = AND masks for Curr 2, Ref 1
+;       if Ref X start = 2, collision = AND masks for Curr 1, Ref 2
+;       increment current Curr Y, Ref Y
+;       if one exceeds 7, we are done
+;     handle collision here?
+;     record perhaps
+;   move to next Curr
+; move to next Ref
+
+; to handle collisions between sprite A and B
+; change the sign of XV and YV (bounce it)
+; move each of XV and YV closer to zero
+
+; to handle collision between player and sprite A
+; and player velocity to sprite
+; set player velocities to zero
+
+; suppose Ref is at 12+3 and Curr is at 13+0
+; Ref has 5 lines before it reaches Curr
+; overlap is 13+0 to 13+2, we check Ref line 5, 6, 7 vs Curr line 0, 1, 2
+; can be computed by taking 13*8+0 (104) minus 12*8+3 (99) (=5)
+; checking from 5 to 7 of Ref against lines starting with 0 of Curr
+; that is: find lower one, multiply row by 8, add offset
+; subtract it from higher one (multiply row by 8, add offset)
+; go from the result to 7, comparing it to rows starting with 0 of the other
+; ANDing the masks should work, nonzero if there is a collision
+; as for x coordinate:
+; mask will reflect shift (offset), so we just factor that into base address
+; if they share an X, just AND the masks together
+; otherwise one X is higher than the other, so we AND the second byte of the
+; lower mask with the first byte of the higher mask.
+; 
+checkcoll:  
+            ldy NumLogs         ; this is the sprite number
+            sty ZRefSprite      
+            sty ZCurrSprite
+            ldy ZRefSprite
+            lda (ZSprY), y
+            sta ZRefY
+            ldy ZCurrSprite
+            rts
+
+
+
+dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
+            lda (ZSprMvTick), y ; only move when delay countdown reaches zero
+            bne :+
+            jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
+            ; TODO consider adding a random wobble to flow
+            jsr movesprite      ; enter with sprite in Y, exits with it still there
+            jsr collshore       ; uses ZCurrSpr
+            jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
+:           dey
+            bpl dmmovelog
+            rts
 
 ; update the sprite's coordinates based on what survived of the proposal
 ; ticksprite must be called first (to set ZCurrSpr)
