@@ -5,7 +5,7 @@
             .setcpu "6502"
 
             .include "zpdef.s"
-            .org     $A000 - 14
+            .org     $9F00 - 14
             ; note: if file gets bigger than 6144 then have to be lower than $A000
             ; start leaves  start   leaves  start   leaves
             ; 9F00  6400    9E00    6656    9D00    6912

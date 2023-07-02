@@ -69,6 +69,8 @@ ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
 ZSprMvTick  = $54   ; pointer to countdown to next movement
 
 ; variables used during movement processing
+ZCollODiff  = $63   ; collision check offset difference
+ZCollRDiff  = $64   ; collision check row difference
 ZCollChkA   = $65   ; collision check scratch A
 ZCollChkB   = $66   ; collision check scratch B
 ZCurrYStart = $67   ; current sprite y comparison start

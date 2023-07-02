@@ -325,43 +325,25 @@ shoredone:  rts
 ;   move to next Curr
 ; move to next Ref
 
-; to handle collisions between sprite A and B
-; ideally we can make it seem physically plausible, they should push each other around
-; so if we have XVA YVA and XVB YVB and they collide, 
-; XVa -2  YVa -2  XVb 1  YVb -1  (a heading northwest fast, b heading northeast slow)
-; I think frictionless reality might just tranfer their velocities to each other
-; but practically it is hard to distinguish one log from another so I think it will
-; just look like they pass through each other.  Still, maybe I'll start there.
-; 
-; change the sign of XV and YV (bounce it)
-; move each of XV and YV closer to zero
-
-; to handle collision between player and sprite A
-; and player velocity to sprite
-; set player velocities to zero
-
-; suppose Ref is at 12+3 and Curr is at 13+0
-; Ref has 5 lines before it reaches Curr
-; overlap is 13+0 to 13+2, we check Ref line 5, 6, 7 vs Curr line 0, 1, 2
-; can be computed by taking 13*8+0 (104) minus 12*8+3 (99) (=5)
-; checking from 5 to 7 of Ref against lines starting with 0 of Curr
-; that is: find lower one, multiply row by 8, add offset
-; subtract it from higher one (multiply row by 8, add offset)
-; go from the result to 7, comparing it to rows starting with 0 of the other
-; ANDing the masks should work, nonzero if there is a collision
-; as for x coordinate:
-; mask will reflect shift (offset), so we just factor that into base address
-; if they share an X, just AND the masks together
-; otherwise one X is higher than the other, so we AND the second byte of the
-; lower mask with the first byte of the higher mask.
-; 
-
-collskip:   jmp ccnext
-checkcoll:  rts
-            ldy NumLogs         ; this is the sprite number
+checkcoll:  ldy NumLogs         ; this is the sprite number
             sty ZRefSpr
             sty ZCurrSpr
-ccrefloop:  lda (ZSprY), y      ; establish the overlap window
+ccloop:     jsr collpair
+            dec ZRefSpr
+            beq :+
+            ldy ZRefSpr
+            sty ZCurrSpr
+            jmp ccloop
+:           ldy NumLogs
+            sty ZCurrSpr
+            ldy #SprPlayer      ; test the player against everything
+            sty ZRefSpr
+            jsr collpair
+            rts
+
+collskip:   jmp ccnext
+
+collpair:   lda (ZSprY), y      ; establish the overlap window
             sta ZOldY
             sta ZOverYTop
             sta ZOverYBot
@@ -429,38 +411,43 @@ cccurloop:  ldy ZCurrSpr
             sta ZRefXStart
             sta ZRefXEnd
             ; work out which lines need to be compared
-ccy:        lda ZNewY
-            sec
-            sbc ZOldY           ; difference in map rows
-            bne ccxrows
-            ; map rows are the same, need to compare offsets
-            lda (ZSprYOff), y
+ccy:        lda (ZSprYOff), y
             sec
             sbc ZOldYOff
-            bpl :+
-            ; new is higher up (smaller Y) than old
-            eor #$FF            ; invert
-            clc
-            adc #$01
-            sta ZCurrYStart
-            lda ZOldYOff
-            sta ZRefYStart
-            bpl cccomp          ; branch always
-:           ; new is lower down (or same; larger or same Y) compared to old
-            sta ZRefYStart
+            sta ZCollODiff      ; offset difference, neg if old > new (old below new)
             lda ZNewY
-            sta ZCurrYStart
-            bpl cccomp          ; branch always
-            ; rows are different
-ccxrows:    
+            sec
+            sbc ZOldY
+            sta ZCollRDiff      ; row difference, neg if old > new (old below new)
+            bne :+              ; branch away if map rows are difference (sign is valid)
+            lda ZCollODiff      ; if same row, use offset diff sign instead
+:           bpl ccoldnew        ; branch away if new is below old
+            ; old is below new
+            lda ZCollRDiff
+            beq :+
+            lda #$08            ; add 8 if they span rows
+:           sec
+            sbc ZCollODiff
+            cmp #$08
             bcc :+
-            ; new is higher up (smaller Y) than old
-            
-:
-            ; new is lower down (or same; larger or same Y) compared to old
-            ; YOU ARE HERE BRAIN IS MUSH
-cccomp:
-            lda (ZSprSprH), y   ; locate the currsprite mask
+            jmp ccnext          ; no overlap
+:           sta ZCurrYStart
+            lda #$00
+            sta ZRefYStart
+            jmp cccomp
+            ; new is below old
+ccoldnew:   lda ZCollRDiff
+            beq :+
+            lda #$08            ; add 8 if they span rows
+:           clc
+            adc ZCollODiff
+            cmp #$08
+            bcc :+
+            jmp ccnext          ; no overlap
+:           sta ZRefYStart
+            lda #$00
+            sta ZCurrYStart
+cccomp:     lda (ZSprSprH), y   ; locate the currsprite mask
             clc
             adc (ZSprXOff), y
             sta ZPtrSprA + 1    ; use ZPtrSpr for the currsprite mask
@@ -495,7 +482,6 @@ ccandmasks: ldy ZCollChkA
             ldy ZCollChkB
             and (ZPtrSprB), y
             bne gotcoll
-            
             ldy ZCurrYStart
             iny
             cpy #$08
@@ -520,11 +506,9 @@ ccandmasks: ldy ZCollChkA
             bne ccnext          ; branch away if we have done a second tile
             inc ZCurrXStart
             inc ZRefXStart
-            jmp cctile            
-            ; got a collision    
-gotcoll:
-            ; for now just bounce
-            ldy ZCurrSpr
+            jmp cctile
+            ; got a collision
+gotcoll:    ldy ZCurrSpr        ; for now just bounce
             lda (ZSprXV), y
             eor #$FF
             clc
@@ -546,20 +530,10 @@ gotcoll:
             clc
             adc #$01
             sta (ZSprYV), y
-ccnext:
-            dec ZCurrSpr
+ccnext:     dec ZCurrSpr
             bmi :+
             jmp cccurloop
-:           dec ZRefSpr
-            beq :+
-            ldy ZRefSpr
-            sty ZCurrSpr
-            jmp ccrefloop
-:           
-            ; at this point we have evaluated all non-player sprites
-            ; against one another but have not yet evaluated
-            ; the player against the other sprites
-            rts
+:           rts
 
 ; update the sprite's coordinates based on what survived of the proposal
 ; ticksprite must be called first (to set ZCurrSpr)
