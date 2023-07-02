@@ -507,29 +507,29 @@ ccandmasks: ldy ZCollChkA
             inc ZCurrXStart
             inc ZRefXStart
             jmp cctile
-            ; got a collision
-gotcoll:    ldy ZCurrSpr        ; for now just bounce
+            ; got a collision - swap velocities
+gotcoll:    ldy ZCurrSpr
             lda (ZSprXV), y
-            eor #$FF
-            clc
-            adc #$01
-            sta (ZSprXV), y
-            lda (ZSprYV), y
-            eor #$FF
-            clc
-            adc #$01
-            sta (ZSprYV), y
+            sta ZCollChkA
             ldy ZRefSpr
             lda (ZSprXV), y
-            eor #$FF
-            clc
-            adc #$01
+            ldy ZCurrSpr
             sta (ZSprXV), y
+            ldy ZRefSpr
+            lda ZCollChkA
+            sta (ZSprXV), y
+            
+            ldy ZCurrSpr
             lda (ZSprYV), y
-            eor #$FF
-            clc
-            adc #$01
+            sta ZCollChkA
+            ldy ZRefSpr
+            lda (ZSprYV), y
+            ldy ZCurrSpr
             sta (ZSprYV), y
+            ldy ZRefSpr
+            lda ZCollChkA
+            sta (ZSprYV), y
+            
 ccnext:     dec ZCurrSpr
             bmi :+
             jmp cccurloop
