@@ -60,9 +60,15 @@ dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
 ; enter with Y holding the sprite number, y continues to hold sprite number after
 ticksprite: sty ZCurrSpr
             lda (ZSprY), y      ; remember original map row in ZOldY
+            sta (ZPrevY),y
             sta ZOldY
             lda (ZSprX), y      ; remember original map column in ZOldX
+            sta (ZPrevX), y
             sta ZOldX
+            lda (ZSprYOff), y   ; remember original y offset row
+            sta (ZPrevYOff),y
+            lda (ZSprXOff), y   ; remember original x offset column
+            sta (ZPrevXOff), y
             lda (ZSprTick), y   ; decrease tick
             sec
             sbc #$01
@@ -343,7 +349,7 @@ ccloop:     jsr collpair
 
 collskip:   jmp ccnext
 
-collpair:   lda (ZSprY), y      ; establish the overlap window
+collpair:   lda (ZSprY), y      ; establish the overlap window wrt ref sprite
             sta ZOldY
             sta ZOverYTop
             sta ZOverYBot
@@ -395,7 +401,7 @@ cccurloop:  ldy ZCurrSpr
             sta ZCurrXEnd
             bne ccy             ; branch always
 :           bcc :+
-            ; reference x column precedes current x column
+            ; reference x column precedes current, compare ref R to curr L
             lda #$00
             sta ZCurrXStart
             sta ZCurrXEnd
@@ -403,7 +409,7 @@ cccurloop:  ldy ZCurrSpr
             sta ZRefXStart
             sta ZRefXEnd
             bne ccy             ; branch always
-            ; reference x column follows current x column
+            ; reference x column follows current, compare ref L to curr R
  :          lda #$01
             sta ZCurrXStart
             sta ZCurrXEnd
@@ -419,7 +425,7 @@ ccy:        lda (ZSprYOff), y
             sec
             sbc ZOldY
             sta ZCollRDiff      ; row difference, neg if old > new (old below new)
-            bne :+              ; branch away if map rows are difference (sign is valid)
+            bne :+              ; branch away if map rows are different (sign is valid)
             lda ZCollODiff      ; if same row, use offset diff sign instead
 :           bpl ccoldnew        ; branch away if new is below old
             ; old is below new
@@ -472,34 +478,46 @@ cctile:     lda ZCurrYStart     ; curr line
             asl                 ; 8
             adc ZRefXStart
             sta ZCollChkA
-ccandmasks: ldy ZCollChkA
+ccandmasks: ldy ZCollChkA       ; ref line mask half
             lda (ZPtrMaskA), y
-            ldy ZCollChkB
-            and (ZPtrSprA), y
-            bne gotcoll
-            ldy ZCollChkA
+            tax
             lda (ZPtrMaskB), y
-            ldy ZCollChkB
+            ldy ZCollChkB       ; curr line mask half
             and (ZPtrSprB), y
             bne gotcoll
-            ldy ZCurrYStart
-            iny
-            cpy #$08
-            bcs :+              ; branch away if done with curr lines
-            sty ZCurrYStart
-            ldy ZRefYStart
-            iny
-            cpy #$08
-            bcs :+              ; branch away if done with ref lines
-            sty ZRefYStart
-            lda ZCollChkA
+            txa
+            and (ZPtrSprA), y
+            bne gotcoll
+            inc ZCollChkA       ; move to next byte of masks (2 bytes per tile pair line)
+            inc ZCollChkB
+            ldy ZCollChkA       ; ref line mask half
+            lda (ZPtrMaskA), y
+            tax
+            lda (ZPtrMaskB), y
+            ldy ZCollChkB       ; curr line mask half
+            and (ZPtrSprB), y
+            bne gotcoll
+            txa
+            and (ZPtrSprA), y
+            bne gotcoll
+            lda ZCollChkA       ; move to next line of masks (4 bytes per tile pair line)
             clc
-            adc #$08
+            adc #$03
             sta ZCollChkA
             lda ZCollChkB
             clc
-            adc #$08
+            adc #$03
             sta ZCollChkB
+            ldy ZCurrYStart
+            cpy #$07
+            bcs :+              ; branch away if done with curr lines
+            iny
+            sty ZCurrYStart
+            ldy ZRefYStart
+            cpy #$07
+            bcs :+              ; branch away if done with ref lines
+            iny
+            sty ZRefYStart
             jmp ccandmasks
 :           lda ZCurrXStart
             ora ZRefXStart
@@ -507,28 +525,98 @@ ccandmasks: ldy ZCollChkA
             inc ZCurrXStart
             inc ZRefXStart
             jmp cctile
-            ; got a collision - swap velocities
-gotcoll:    ldy ZCurrSpr
-            lda (ZSprXV), y
-            sta ZCollChkA
+            ; got a collision - swap velocities, restore position
+            ; YOU ARE HERE -- for some reason having the restore position part just stops everything
+            ; always.  Shouldn't.  Is it sensing non-collisions?  Doesn't seem like it.
+gotcoll:    ldy ZCurrSpr        ; restore current sprite's pre-movement position.
+            ;(.*)$ lda (ZPrevX), y
+            ;(.*)$ sta (ZSprX), y
+            ;(.*)$ lda (ZPrevXOff), y
+            ;(.*)$ sta (ZSprXOff), y
+            ;(.*)$ lda (ZPrevY), y
+            ;(.*)$ sta (ZSprY), y
+            ;(.*)$ lda (ZPrevYOff), y
+            ;(.*)$ sta (ZSprYOff), y
+            lda (ZSprXV), y     ; swap velocities
+            sta ZCollChkA       ; curr XV
+            lda (ZSprYV), y
+            sta ZCollChkB       ; curr YV
             ldy ZRefSpr
-            lda (ZSprXV), y
+            lda (ZSprXV), y     
+            tax                 ; ref XV
+            lda (ZSprYV), y
             ldy ZCurrSpr
-            sta (ZSprXV), y
+            sta (ZSprYV), y     ; ref YV -> curr YV
+            txa
+            sta (ZSprXV), y     ; ref XV -> curr XV
             ldy ZRefSpr
             lda ZCollChkA
-            sta (ZSprXV), y
+            sta (ZSprXV), y     ; curr XV -> ref XV
+            lda ZCollChkB
+            sta (ZSprYV), y     ; curr YV -> ref YV
+            ;(.*)$ lda (ZPrevX), y     ; restore reference sprite's pre-movement position.
+            ;(.*)$ sta (ZSprX), y
+            ;(.*)$ lda (ZPrevXOff), y
+            ;(.*)$ sta (ZSprXOff), y
+            ;(.*)$ lda (ZPrevY), y
+            ;(.*)$ sta (ZSprY), y
+            ;(.*)$ lda (ZPrevYOff), y
+            ;(.*)$ sta (ZSprYOff), y
             
-            ldy ZCurrSpr
-            lda (ZSprYV), y
-            sta ZCollChkA
-            ldy ZRefSpr
-            lda (ZSprYV), y
-            ldy ZCurrSpr
-            sta (ZSprYV), y
-            ldy ZRefSpr
-            lda ZCollChkA
-            sta (ZSprYV), y
+;(.*)$             ; got a collision - bounce and transfer
+;(.*)$ gotcoll:    ldy ZCurrSpr
+;(.*)$             lda (ZSprXV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta ZCollChkA
+;(.*)$             lda (ZSprYV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta ZCollChkB
+;(.*)$             ldy ZRefSpr
+;(.*)$             sta (ZSprXV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             tax
+;(.*)$             lda (ZSprYV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             ldy ZCurrSpr
+;(.*)$             sta (ZSprYV), y
+;(.*)$             txa
+;(.*)$             sta (ZSprXV), y
+;(.*)$             ldy ZRefSpr
+;(.*)$             lda ZCollChkA
+;(.*)$             sta (ZSprXV), y
+;(.*)$             lda ZCollChkA
+;(.*)$             sta (ZSprYV), y
+;(.*)$             ; got a collision - bounce (reverse velocities)
+;(.*)$ gotcoll:    ldy ZCurrSpr
+;(.*)$             lda (ZSprXV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta (ZSprXV), y
+;(.*)$             lda (ZSprYV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta (ZSprYV), y
+;(.*)$             ldy ZRefSpr
+;(.*)$             lda (ZSprXV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta (ZSprXV), y
+;(.*)$             lda (ZSprYV), y
+;(.*)$             eor #$FF
+;(.*)$             clc
+;(.*)$             adc #$01
+;(.*)$             sta (ZSprYV), y
             
 ccnext:     dec ZCurrSpr
             bmi :+

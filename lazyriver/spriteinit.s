@@ -74,6 +74,20 @@ spriteinit:
             stx ZSprDelay + 1
             inx                 ; $C00
             lda #$00
+            sta ZPrevX
+            stx ZPrevX + 1
+            lda #$80
+            sta ZPrevY
+            stx ZPrevY + 1
+            inx                 ; $D00
+            lda #$00
+            sta ZPrevXOff
+            stx ZPrevXOff + 1
+            lda #$80
+            sta ZPrevYOff
+            stx ZPrevYOff + 1
+            inx                 ; $E00
+            lda #$00
             sta ZSprMvTick
             stx ZSprMvTick + 1
             lda #$82            ; bank 2
@@ -96,7 +110,11 @@ spriteinit:
             sta ZSprSprH + XByte
             sta ZSprDelay + XByte
             sta ZSprMvTick + XByte
-            
+            sta ZPrevX + XByte
+            sta ZPrevY + XByte
+            sta ZPrevXOff + XByte
+            sta ZPrevYOff + XByte
+
             ; place some logs
             lda NumLogs
             sta LogsLeft            ; 0-based, must have at least one log
@@ -203,6 +221,10 @@ sprfinish:  sta (ZSprType), y       ; A=sprite type
             sta (ZSprYOff), y       ; y offset from tile edge
             sta (ZSprTick), y       ; current animation tick
             sta (ZSprMvTick), y     ; current movement tick
+            sta (ZPrevX), y         ; previous X
+            sta (ZPrevY), y         ; previous Y
+            sta (ZPrevXOff), y      ; previous X offset
+            sta (ZPrevYOff), y      ; previous Y offset
             lda #$FF
             sta (ZSprDrXOne), y     ; mark as undrawn
             sta (ZSprDrXTwo), y     ; mark as undrawn

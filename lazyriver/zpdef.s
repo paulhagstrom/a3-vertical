@@ -67,6 +67,10 @@ ZSprBgH     = $4E   ; pointer to high byte of pointer to sprite cached backgroun
 ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprType)
 ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
 ZSprMvTick  = $54   ; pointer to countdown to next movement
+ZPrevX      = $56   ; pointer to sprite X pre-movement
+ZPrevY      = $58   ; pointer to sprite Y pre-movement
+ZPrevXOff   = $5A   ; pointer to sprite X offset pre-movement
+ZPrevYOff   = $5C   ; pointer to sprite Y offset pre-movement
 
 ; variables used during movement processing
 ZCollODiff  = $63   ; collision check offset difference
@@ -96,6 +100,7 @@ ZNewX       = $7B   ; postmovement X
 ZNewXOff    = $7C   ; postmovement X offset
 ZNewY       = $7D   ; postmovement Y
 ZNewYOff    = $7E   ; postmovement Y offset
+ZBytesLeft  = $7f   ; countdown of bytes left in collision detection
 
 ZRastCache  = $80   ; 8 bytes of adjusted y coordinates for drawing sprites
 

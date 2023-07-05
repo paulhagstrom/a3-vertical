@@ -90,10 +90,10 @@ bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             sta ZMapPtr
             lda #$03        ; water tile countdown for right shore current
             sta ProxR
-            lda ShoreL      ; tile to trigger left shore current
+            lda ShoreL      
             clc
             adc #$03
-            sta ProxL
+            sta ProxL       ; tile to trigger left shore current
             lda ShoreR      ; compute present width
             sec
             sbc ShoreL
@@ -114,12 +114,12 @@ bmwater:    lda TileWater, x    ; otherwise, we're in the water, load the water 
             sta ZPxScratch      ; start building the map byte, starting with tile type
             dec ProxR           ; are we within 2 tiles of the right shore?
             bmi :+              ; branch away if we're further from the right shore
-            lda ShoreRV         ; put right shore velocity in x flow velocity
+            lda #<-2            ; sent it away from the shore at -2 x velocity
             bpl bmxflowz        ; unless it is positive (widening)
             bmi bmxflow         ; branch always
-:           cmp ProxL           ; are we within 2 tiles of the left shore?
+:           cpx ProxL           ; are we within 2 tiles of the left shore?
             bcs bmxflowz        ; branch away if we're further away from left shore
-            lda ShoreLV         ; put left shore velocity in x flow velocity
+            lda #2              ; send it away from the shore at +2 x velocity
             bpl bmxflow         ; unless it is negative (widening)
 bmxflowz:   lda #$00
 bmxflow:    clc                 ; add three to x velocity because it is
