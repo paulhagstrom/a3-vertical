@@ -34,41 +34,19 @@ dmplayer:   ldy #SprPlayer
             ; move logs
             ldy NumLogs         ; this is the sprite number
 dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
-            lda (ZSprMvTick), y ; only move when delay countdown reaches zero
-            bne :+
+            bcs :+              ; if not at a movement tick, skip ahead
             jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
-            ; TODO consider adding a random wobble to flow
             jsr movesprite      ; enter with sprite in Y, exits with it still there
             jsr collshore       ; uses ZCurrSpr
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
 :           dey
             bpl dmmovelog
-            ; we want to check collisions post-movement,
-            ; but we also want to check collisions all at once so that we
-            ; can check each sprite pairing only once
-            ; problem is what to do if there is a collision
-            ; we can bounce their velocities rather than stop them but there
-            ; will be a tick where they actually overlap
-            ; if we decrease their velocities they'll stop while overlapped
-            ; maybe this is ok for logs against each other
-            ; hoping that this won't result in a log bouncing ashore
-            ; probably want to treat collisions with player differently
-            jsr checkcoll
+            jsr checkcoll       ; check sprite-to-sprite collisions
             rts
 
 ; tick animation for a single sprite and put sprite number in ZCurrSpr
 ; enter with Y holding the sprite number, y continues to hold sprite number after
 ticksprite: sty ZCurrSpr
-            lda (ZSprY), y      ; remember original map row in ZOldY
-            sta (ZPrevY),y
-            sta ZOldY
-            lda (ZSprX), y      ; remember original map column in ZOldX
-            sta (ZPrevX), y
-            sta ZOldX
-            lda (ZSprYOff), y   ; remember original y offset row
-            sta (ZPrevYOff),y
-            lda (ZSprXOff), y   ; remember original x offset column
-            sta (ZPrevXOff), y
             lda (ZSprTick), y   ; decrease tick
             sec
             sbc #$01
@@ -83,9 +61,20 @@ ticksprite: sty ZCurrSpr
             sec
             sbc #$01
             sta (ZSprMvTick), y
-            bpl :+              ; not time to move yet
+            bcs :+              ; not time to move yet
             lda (ZSprDelay), y  ; reset movement tick timer
             sta (ZSprMvTick), y
+            lda (ZSprY), y      ; remember original map row in ZOldY
+            sta (ZPrevY),y
+            sta ZOldY
+            lda (ZSprX), y      ; remember original map column in ZOldX
+            sta (ZPrevX), y
+            sta ZOldX
+            lda (ZSprYOff), y   ; remember original y offset row
+            sta (ZPrevYOff),y
+            lda (ZSprXOff), y   ; remember original x offset column
+            sta (ZPrevXOff), y
+            clc                 ; tell caller to move this sprite
 :           rts
 
 ; update sprite's velocity based on flow vector of the tile it is in
@@ -277,7 +266,7 @@ logshyok:   ldy ZCurrSpr
             sta ZNewX
             lda (ZSprXOff), y
             sta ZNewXOff
-            bcc shoredone       ; branch away to rts if we are only zeroing X
+            bcc shoredone       ; branch away to rts if we are only zeroing XV
             ; shore impedes vertical movement only
 logshxok:   ldy ZCurrSpr
             lda #$00            ; zero out Y velocity
@@ -287,6 +276,21 @@ logshxok:   ldy ZCurrSpr
             lda (ZSprYOff), y
             sta ZNewYOff
 shoredone:  rts
+
+; update the sprite's coordinates based on what survived of the proposal
+; ticksprite must be called first (to set ZCurrSpr)
+; movesprite must be called first (to set ZNewX, ZNewXOff, ZNewY, ZNewYOff)
+; returns with current sprite in Y
+spriteupd:  ldy ZCurrSpr
+            lda ZNewX
+            sta (ZSprX), y
+            lda ZNewY
+            sta (ZSprY), y
+            lda ZNewXOff
+            sta (ZSprXOff), y
+            lda ZNewYOff
+            sta (ZSprYOff), y
+            rts
 
 ; check the sprite collision matrix
 ; if we're checking each sprite against each other, we want to do this
@@ -333,23 +337,25 @@ shoredone:  rts
 
 checkcoll:  ldy NumLogs         ; this is the sprite number
             sty ZRefSpr
+ccrefloop:  ldy ZRefSpr
+            dey
             sty ZCurrSpr
-ccloop:     jsr collpair
+            jsr collpairs       ; check the pairs including refspr
             dec ZRefSpr
-            beq :+
-            ldy ZRefSpr
-            sty ZCurrSpr
-            jmp ccloop
-:           ldy NumLogs
+            bne ccrefloop       ; branch away if there are sprites left
+            ldy NumLogs
             sty ZCurrSpr
             ldy #SprPlayer      ; test the player against everything
             sty ZRefSpr
-            jsr collpair
+            jsr collpairs
             rts
 
 collskip:   jmp ccnext
 
-collpair:   lda (ZSprY), y      ; establish the overlap window wrt ref sprite
+; assumes that ZRefSpr is set to reference sprite
+; and ZCurrSpr is set to first comparison sprite, will check all lower ones as well
+collpairs:  ldy ZRefSpr         ; establish the overlap window wrt ref sprite
+            lda (ZSprY), y
             sta ZOldY
             sta ZOverYTop
             sta ZOverYBot
@@ -372,7 +378,7 @@ collpair:   lda (ZSprY), y      ; establish the overlap window wrt ref sprite
             sta ZPtrMaskB + 1
             lda (ZSprAnim), y
             lsr
-            ror
+            ror                 ; $80 or $00 depending on animation frame
             adc #$40            ; mask offset (carry known to be clear)
             sta ZPtrMaskA
             adc #$20
@@ -396,21 +402,21 @@ cccurloop:  ldy ZCurrSpr
             lda #$00
             sta ZRefXStart
             sta ZCurrXStart
-            lda #$01
+            lda #$02
             sta ZRefXEnd
             sta ZCurrXEnd
             bne ccy             ; branch always
 :           bcc :+
-            ; reference x column precedes current, compare ref R to curr L
+            ; reference x column precedes current, compare curr L to ref R
             lda #$00
             sta ZCurrXStart
             sta ZCurrXEnd
-            lda #$01
+            lda #$02
             sta ZRefXStart
             sta ZRefXEnd
             bne ccy             ; branch always
-            ; reference x column follows current, compare ref L to curr R
- :          lda #$01
+            ; reference x column follows current, compare curr R to ref L
+ :          lda #$02
             sta ZCurrXStart
             sta ZCurrXEnd
             lda #$00
@@ -460,7 +466,7 @@ cccomp:     lda (ZSprSprH), y   ; locate the currsprite mask
             sta ZPtrSprB + 1
             lda (ZSprAnim), y
             lsr
-            ror
+            ror                 ; $80 or $00 depending on animation frame
             adc #$40            ; mask offset (carry known to be clear)
             sta ZPtrSprA
             adc #$20
@@ -468,16 +474,14 @@ cccomp:     lda (ZSprSprH), y   ; locate the currsprite mask
             ; check if the masks collide
 cctile:     lda ZCurrYStart     ; curr line
             asl
-            asl
-            asl                 ; x8
-            adc ZCurrXStart
-            sta ZCollChkB
+            asl                 ; x4
+            adc ZCurrXStart     ; $00 or $02 depending on which side
+            sta ZCollChkB       ; curr line mask half
             lda ZRefYStart      ; ref line
             asl
-            asl
-            asl                 ; 8
-            adc ZRefXStart
-            sta ZCollChkA
+            asl                 ; x4
+            adc ZRefXStart      ; $00 or $02 depending on which side
+            sta ZCollChkA       ; ref line mask half
 ccandmasks: ldy ZCollChkA       ; ref line mask half
             lda (ZPtrMaskA), y
             tax
@@ -502,11 +506,11 @@ ccandmasks: ldy ZCollChkA       ; ref line mask half
             bne gotcoll
             lda ZCollChkA       ; move to next line of masks (4 bytes per tile pair line)
             clc
-            adc #$03
+            adc #$03            ; already added one, adding 3 more yields 4
             sta ZCollChkA
             lda ZCollChkB
             clc
-            adc #$03
+            adc #$03            ; already added one, adding 3 more yields 4
             sta ZCollChkB
             ldy ZCurrYStart
             cpy #$07
@@ -521,79 +525,98 @@ ccandmasks: ldy ZCollChkA       ; ref line mask half
             jmp ccandmasks
 :           lda ZCurrXStart
             ora ZRefXStart
-            bne ccnext          ; branch away if we have done a second tile
-            inc ZCurrXStart
-            inc ZRefXStart
+            bne ccnext          ; branch away if we have done the right tile of a pair
+            lda #$02            ; we were doing the left side of both, do right side now
+            sta ZCurrXStart
+            sta ZRefXStart
             jmp cctile
             ; got a collision - swap velocities, restore position
-            ; YOU ARE HERE -- for some reason having the restore position part just stops everything
-            ; always.  Shouldn't.  Is it sensing non-collisions?  Doesn't seem like it.
-gotcoll:    ldy ZCurrSpr        ; restore current sprite's pre-movement position.
-            ;(.*)$ lda (ZPrevX), y
-            ;(.*)$ sta (ZSprX), y
-            ;(.*)$ lda (ZPrevXOff), y
-            ;(.*)$ sta (ZSprXOff), y
-            ;(.*)$ lda (ZPrevY), y
-            ;(.*)$ sta (ZSprY), y
-            ;(.*)$ lda (ZPrevYOff), y
-            ;(.*)$ sta (ZSprYOff), y
-            lda (ZSprXV), y     ; swap velocities
-            sta ZCollChkA       ; curr XV
+;(.*)$ gotcoll:    ldy ZCurrSpr        ; restore current sprite's pre-movement position.
+;(.*)$             lda (ZPrevX), y
+;(.*)$             sta (ZSprX), y
+;(.*)$             lda (ZPrevXOff), y
+;(.*)$             sta (ZSprXOff), y
+;(.*)$             lda (ZPrevY), y
+;(.*)$             sta (ZSprY), y
+;(.*)$             lda (ZPrevYOff), y
+;(.*)$             sta (ZSprYOff), y
+;(.*)$             
+;(.*)$             lda (ZSprXV), y     ; swap velocities
+;(.*)$             sta ZCollChkA       ; curr XV
+;(.*)$             lda (ZSprYV), y
+;(.*)$             sta ZCollChkB       ; curr YV
+;(.*)$             ldy ZRefSpr
+;(.*)$             lda (ZSprXV), y     
+;(.*)$             tax                 ; ref XV
+;(.*)$             lda (ZSprYV), y
+;(.*)$             ldy ZCurrSpr
+;(.*)$             sta (ZSprYV), y     ; ref YV -> curr YV
+;(.*)$             txa
+;(.*)$             sta (ZSprXV), y     ; ref XV -> curr XV
+;(.*)$             ldy ZRefSpr
+;(.*)$             lda ZCollChkA
+;(.*)$             sta (ZSprXV), y     ; curr XV -> ref XV
+;(.*)$             lda ZCollChkB
+;(.*)$             sta (ZSprYV), y     ; curr YV -> ref YV
+;(.*)$             
+;(.*)$             lda (ZPrevX), y     ; restore reference sprite's pre-movement position.
+;(.*)$             sta (ZSprX), y
+;(.*)$             lda (ZPrevXOff), y
+;(.*)$             sta (ZSprXOff), y
+;(.*)$             lda (ZPrevY), y
+;(.*)$             sta (ZSprY), y
+;(.*)$             lda (ZPrevYOff), y
+;(.*)$             sta (ZSprYOff), y
+            
+            ; got a collision - bounce and transfer
+gotcoll:    ldy ZCurrSpr
+            lda (ZPrevX), y
+            sta (ZSprX), y
+            lda (ZPrevXOff), y
+            sta (ZSprXOff), y
+            lda (ZPrevY), y
+            sta (ZSprY), y
+            lda (ZPrevYOff), y
+            sta (ZSprYOff), y
+            lda (ZSprXV), y
+            eor #$FF
+            clc
+            adc #$01
+            sta ZCollChkA
             lda (ZSprYV), y
-            sta ZCollChkB       ; curr YV
+            eor #$FF
+            clc
+            adc #$01
+            sta ZCollChkB
             ldy ZRefSpr
-            lda (ZSprXV), y     
-            tax                 ; ref XV
+            sta (ZSprXV), y
+            eor #$FF
+            clc
+            adc #$01
+            tax
             lda (ZSprYV), y
+            eor #$FF
+            clc
+            adc #$01
             ldy ZCurrSpr
-            sta (ZSprYV), y     ; ref YV -> curr YV
+            sta (ZSprYV), y
             txa
-            sta (ZSprXV), y     ; ref XV -> curr XV
+            sta (ZSprXV), y
             ldy ZRefSpr
             lda ZCollChkA
-            sta (ZSprXV), y     ; curr XV -> ref XV
-            lda ZCollChkB
-            sta (ZSprYV), y     ; curr YV -> ref YV
-            ;(.*)$ lda (ZPrevX), y     ; restore reference sprite's pre-movement position.
-            ;(.*)$ sta (ZSprX), y
-            ;(.*)$ lda (ZPrevXOff), y
-            ;(.*)$ sta (ZSprXOff), y
-            ;(.*)$ lda (ZPrevY), y
-            ;(.*)$ sta (ZSprY), y
-            ;(.*)$ lda (ZPrevYOff), y
-            ;(.*)$ sta (ZSprYOff), y
+            sta (ZSprXV), y
+            lda ZCollChkA
+            sta (ZSprYV), y
             
-;(.*)$             ; got a collision - bounce and transfer
-;(.*)$ gotcoll:    ldy ZCurrSpr
-;(.*)$             lda (ZSprXV), y
-;(.*)$             eor #$FF
-;(.*)$             clc
-;(.*)$             adc #$01
-;(.*)$             sta ZCollChkA
-;(.*)$             lda (ZSprYV), y
-;(.*)$             eor #$FF
-;(.*)$             clc
-;(.*)$             adc #$01
-;(.*)$             sta ZCollChkB
-;(.*)$             ldy ZRefSpr
-;(.*)$             sta (ZSprXV), y
-;(.*)$             eor #$FF
-;(.*)$             clc
-;(.*)$             adc #$01
-;(.*)$             tax
-;(.*)$             lda (ZSprYV), y
-;(.*)$             eor #$FF
-;(.*)$             clc
-;(.*)$             adc #$01
-;(.*)$             ldy ZCurrSpr
-;(.*)$             sta (ZSprYV), y
-;(.*)$             txa
-;(.*)$             sta (ZSprXV), y
-;(.*)$             ldy ZRefSpr
-;(.*)$             lda ZCollChkA
-;(.*)$             sta (ZSprXV), y
-;(.*)$             lda ZCollChkA
-;(.*)$             sta (ZSprYV), y
+            lda (ZPrevX), y     ; restore reference sprite's pre-movement position.
+            sta (ZSprX), y
+            lda (ZPrevXOff), y
+            sta (ZSprXOff), y
+            lda (ZPrevY), y
+            sta (ZSprY), y
+            lda (ZPrevYOff), y
+            sta (ZSprYOff), y
+
 ;(.*)$             ; got a collision - bounce (reverse velocities)
 ;(.*)$ gotcoll:    ldy ZCurrSpr
 ;(.*)$             lda (ZSprXV), y
@@ -622,18 +645,3 @@ ccnext:     dec ZCurrSpr
             bmi :+
             jmp cccurloop
 :           rts
-
-; update the sprite's coordinates based on what survived of the proposal
-; ticksprite must be called first (to set ZCurrSpr)
-; movesprite must be called first (to set ZNewX, ZNewXOff, ZNewY, ZNewYOff)
-; returns with current sprite in Y
-spriteupd:  ldy ZCurrSpr
-            lda ZNewX
-            sta (ZSprX), y
-            lda ZNewY
-            sta (ZSprY), y
-            lda ZNewXOff
-            sta (ZSprXOff), y
-            lda ZNewYOff
-            sta (ZSprYOff), y
-            rts

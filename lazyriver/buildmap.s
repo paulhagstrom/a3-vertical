@@ -26,8 +26,8 @@
 ; 8     7   6     5     4       3 2 1
 ; -------   -------------       -----
 ; yvel      xvel                tile type
-; 00=land   010=left slow -1    100 = water 1
-; 01=slow   000=left fast -3    111 = water 4
+; 00=stop   000=left fast -3    100 = water 1
+; 01=slow   010=left slow -1    111 = water 4
 ; 10=med    100=right slow +1   000 = land 1
 ; 11=fast   110=right fast +3   011 = land 4
 ;
@@ -61,7 +61,7 @@ bmidxmap:   sta MapLineL, y
             inx
             bne bmidxmap    ; branch always
 bmidxdone:  dey             ; start at line $FF and build toward 0
-            ; pick random shore start points, start "velocity" as straight up
+            ; pick random shore start points, start "shore velocity" as straight up
             ldx Seed
             inc Seed
             lda Random, x
@@ -77,7 +77,7 @@ bmidxdone:  dey             ; start at line $FF and build toward 0
             lda #19         ; last tile on the right
             sec
             sbc ShoreR
-            sta ShoreR
+            sta ShoreR      ; 19 - random(0-7)
             lda #$00        ; start shore velocity at 0 (straight up)
             sta ShoreLV
             sta ShoreRV
@@ -88,12 +88,12 @@ bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             sta ZMapPtr + 1
             lda MapLineL, y
             sta ZMapPtr
-            lda #$03        ; water tile countdown for right shore current
-            sta ProxR
+            lda #$02        ; number of tiles in from right shore
+            sta ProxR       ; where current pushes away from shore
             lda ShoreL      
             clc
-            adc #$03
-            sta ProxL       ; tile to trigger left shore current
+            adc #$02        ; number of tiles in from left shore
+            sta ProxL       ; where current pushes away from shore
             lda ShoreR      ; compute present width
             sec
             sbc ShoreL
@@ -112,15 +112,14 @@ bmland:     lda TileLand, x     ; load the land tile
             bpl bmstore         ; branch always to store the map value
 bmwater:    lda TileWater, x    ; otherwise, we're in the water, load the water tile
             sta ZPxScratch      ; start building the map byte, starting with tile type
-            dec ProxR           ; are we within 2 tiles of the right shore?
+            dec ProxR           ; are we within the right shore current range?
             bmi :+              ; branch away if we're further from the right shore
             lda #<-2            ; sent it away from the shore at -2 x velocity
-            bpl bmxflowz        ; unless it is positive (widening)
             bmi bmxflow         ; branch always
-:           cpx ProxL           ; are we within 2 tiles of the left shore?
+:           cpy ProxL           ; are we within 2 tiles of the left shore?
             bcs bmxflowz        ; branch away if we're further away from left shore
             lda #2              ; send it away from the shore at +2 x velocity
-            bpl bmxflow         ; unless it is negative (widening)
+            bpl bmxflow         ; branch always
 bmxflowz:   lda #$00
 bmxflow:    clc                 ; add three to x velocity because it is
             adc #$03            ; simplest to work with positive numbers
@@ -130,11 +129,11 @@ bmxflow:    clc                 ; add three to x velocity because it is
             ora ZPxScratch      ; add the x flow bits to the tile type
             sta ZPxScratch
             lda ZWidth          ; work out y flow speed
-            cmp #$08            ; narrow, fast water
+            cmp #$06            ; narrow, fast water
             bcs :+
             lda #%11000000      ; 3 is fast
             bne bmyflow         ; branch always
-:           cmp #$0E            ; middle width, speedy water
+:           cmp #$0C            ; middle width, speedy water
             bcs :+
             lda #%10000000      ; 2 is speedy but not fast
             bne bmyflow         ; branch always
