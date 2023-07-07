@@ -1,50 +1,9 @@
 ; lazyriver
 ; movement processing
 
-domove:     lda ShownPage
-            eor #$01            ; focus on nondisplayed page (starts in sync with displayed)
-            and #$01
-            tax                 ; x is 0 if we are not looking at page 1, 1 if page 2
-            ; move ground
-            lda GroundVel
-            beq dmplayer        ; branch if not moving vertically
-            bmi dmgnddown       ; branch if ground down, offset decreasing
-            ; ground scrolls up, offset increasing
-            cmp #$01            ; is this a scroll or a jump?
-            beq dmupscroll      ; branch away if it is a scroll
-            lda PgOneTop, x     ; check to see if we are too close to the bottom
-            cmp #229            ; last possible (jumpable) top row?
-            bcs dmplayer        ; branch away if no room to jump
-            clc
-            adc #$02            ; this is how far jumping goes
-            sta NeedJump
-            bne dmplayer        ; branch always
-dmupscroll: lda #$01            ; map will be scrolling up, adding to offset
-            ldy PgOneTop, x     ; check to see if we are at the bottom
-            cpy #231            ; last possible top row?
-            bne dmgndmove       ; no, so proceed
-            ldy PgOneOff, x     ; yes, last possible top row
-            cpy #$07            ; last possible offset?
-            bcs dmplayer        ; if at the very bottom, do not move
-            bcc dmgndmove       ; branch always - otherwise, move
-            ; ground scrolls down, offset decreasing
-dmgnddown:  cmp #<-1            ; is this a scroll or a jump?
-            beq dmdnscroll      ; branch away if it is a scroll           
-            lda PgOneTop, x     ; check to see if we are too close to the top
-            cmp #2              ; last possible (jumpable) top row?
-            bcc dmplayer        ; branch away if no room to jump
-            sec
-            sbc #$02            ; this is how far jumping goes
-            sta NeedJump
-            bne dmplayer
-dmdnscroll: lda #$FF            ; map will be scrolling down, subtracting from offset
-            ldy PgOneTop, x     ; check to see if we are at the top
-            bne dmgndmove       ; if not at top map line, up is for sure ok
-            ldy PgOneOff, x     ; in top map line, at top offset?
-            beq dmplayer        ; if at the very top, do not move
-dmgndmove:  sta NeedScroll      ; 0=stop, neg=map down/dec off, pos=map up/inc off
-            ; move player
-dmplayer:   ldy #SprPlayer
+; TODO - keep player in frame by jumping if needed, remove independent scrolling?
+
+domove:     ldy #SprPlayer      ; move player
             jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             ; do not subject the player to the flow vectors or shore collisions
             jsr movesprite      ; enter with sprite in Y, exits with it still there

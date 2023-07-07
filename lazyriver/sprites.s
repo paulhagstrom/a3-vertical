@@ -306,6 +306,31 @@ clrlog:     sty LogsLeft
             bne clrlog          ; branch always
 cssdone:    rts
 
+; forget we drew sprites without actually erasing them
+; (used when the screen is being repainted anyway)
+byesprites: lda ShownPage
+            eor #$01            ; switch focus to nonvisible page
+            and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
+            beq byeone
+            ; forget page two sprites
+            lda #$FF
+            ldy NumLogs
+:           sta (ZSprDrXTwo), y
+            dey
+            bpl :-
+            ldy #SprPlayer
+            sta (ZSprDrXTwo), y
+            rts
+            ; forget page one sprites
+byeone:     lda #$FF
+            ldy NumLogs
+:           sta (ZSprDrXOne), y
+            dey
+            bpl :-
+            ldy #SprPlayer
+            sta (ZSprDrXOne), y
+            rts            
+ 
 ; clear a single sprite
 ; entry: Y holds the sprite number
 clrsprite:  sty ZCurrSpr

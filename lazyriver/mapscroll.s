@@ -78,38 +78,87 @@
 ; about 21580 cycles per refresh from which to figure how our fps is.
 ;
 
-; This checks to see if scrolling is needed (domove communicates via NeedScroll).
-; called always but if no scrolling is needed, it exits quickly with carry clear.
-; If it does scroll, it will exit with carry set to indicate significant time elapsed.
-; value for NeedScroll is: 0=stop, neg=map down/dec offset, pos=map up/inc offset
+JumpRows = 2
 
-fixscroll:  clc                 ; carry clear = "scroll up"
-NeedJump = *+1
-            lda #INLINEVAR      ; 0 - no jump needed, otherwise holds new top map line
-            beq :+
-            ldy #$00            ; reset smooth scroll parameter to 0
-            sty NudgeVal
-            sty NeedJump
-            sty NeedScroll
+; jump the nonvisible page and repaint it (if we are moving more than 1 line)
+; x holds the direction we intend to jump (neg if top row is degreasing, pos if increasing)
+jumpscroll: lda ShownPage
+            eor #$01            ; switch focus to nonvisible page
+            and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tay
+            lda #$00            ; reset scroll offset on nonvisible page
+            sta PgOneOff, y
+            txa
+            bmi jsdown          ; branch away if jumping down (map row decreasing)
+            ; ground jumping up (map row increasing)
+            lda PgOneTop, y     ; check to see if we are too close to the bottom
+            cmp #(231-JumpRows) ; last possible (jump-down-from-able) top row?
+            bcs jsnope          ; branch away if no room to jump
+            clc
+            adc #JumpRows       ; jump ahead JumpRows rows
+            bne jsdojump        ; branch always
+            ; ground jumping down (map row decreasing)
+jsdown:     lda PgOneTop, y     ; check to see if we are too close to the top
+            cmp #JumpRows       ; last possible (jump-up-from-able) top row?
+            bcc jsnope          ; branch away if no room to jump
+            sec
+            sbc #JumpRows       ; jump back JumpRows rows
+jsdojump:   sta PgOneTop, y     ; update map top
+            lda #$00            ; zero out offset
+            sta PgOneOff, y
+            jmp paintpage
+jsnope:     rts
+
+; sync nonvisible page with the visible page (repaint nonvisible page if needed)
+; done early so we can avoid erasing sprites if they'll just be overwritten anyway
+; exits with carry clear if we jumped (so do not need to erase sprites), set if we did not jump
+syncjump:   lda PgOneTop
+            sec
+            sbc PgTwoTop
+            beq sjnope          ; branch away if top rows are the same (carry set)
+            cmp #<-1            ; if top rows are only one apart, assume that wasn't due to jumping
+            beq sjnope
+            cmp #$01
+            beq sjnope
+            ; rows are more than one apart, so we do need to sync to a jump
             lda ShownPage
             and #$01
+            tax                 ; x = index to visible page
             eor #$01
-            tax
-            tya
-            sta PgOneTop, x
-            lda #$00
-            sta PgOneOff, x
-            jmp paintpage
-NeedScroll = *+1
-:           lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
-            beq noscroll
-            bmi scrolldn
-            bcc scrollup        ; branch always
-scrolldn:   sec
-scrollup:   jsr scrollmap       ; scroll the screen (using smooth scroll)
-            lda #$00
-            sta NeedScroll      ; we no longer need a scroll
+            tay                 ; y = index to nonvisible page
+            lda PgOneTop, x     ; put visible top row into nonvisible top row
+            sta PgOneTop, y
+            lda #$00            ; reset nonvisible offset to zero
+            sta PgOneOff, y
+            jsr paintpage
+            clc                 ; inform the caller that we jumped and painted
+sjnope:     rts                 ; (carry set means we did not need to jump)
+
+; scroll nonvisible page if a scroll is needed (based on GroundVel)
+fixscroll:  lda ShownPage
+            eor #$01            ; focus on nondisplayed page (starts in sync with displayed)
+            and #$01
+            tax                 ; x is 0 if we are not looking at page 1, 1 if page 2
+            ; move ground
+            lda GroundVel
+            beq noscroll        ; branch away if ground not moving
+            bmi spdown          ; branch if ground down, offset decreasing
+            ; ground scrolls up, offset increasing
+dmupscroll: lda #$01            ; map will be scrolling up, adding to offset
+            ldy PgOneTop, x     ; check to see if we are at the bottom
+            cpy #231            ; last possible top row?
+            bne :+              ; no, so proceed
+            ldy PgOneOff, x     ; yes, last possible top row
+            cpy #$07            ; last possible offset?
+            bcs noscroll        ; if at the very bottom, do not move
+:           jmp scrollmap       ; scroll up, adding to offset (carry known to be clear)
+            ; ground scrolls down, offset decreasing
+spdown:     ldy PgOneTop, x     ; check to see if we are at the top
+            bne :+              ; if not at top map line, up is for sure ok
+            ldy PgOneOff, x     ; in top map line, at top offset?
+            beq noscroll        ; if at the very top, do not move
+:           sec                 ; scroll down, subtracting from offset
+            jmp scrollmap
 noscroll:   rts
 
 ; synchronize the scroll on the page we are not looking at with the scroll
@@ -126,33 +175,11 @@ noscroll:   rts
 syncscroll: lda PgOneTop
             sec
             sbc PgTwoTop
-            bne syncjump        ; branch if top row is different - sync is necessary
+            bne syncneeded      ; branch if top row is different - sync is necessary
             lda PgOneOff        ; if rows are the same, check if offsets are the same
             cmp PgTwoOff
             bne syncneeded      ; branch if offset is different - sync is necessary
-            clc                 ; equal also means carry set, so need to clear
-            rts                 ; return, indicating that we spent no time
-            ; sync needed but jump may be necessary
-syncjump:   cmp #<-1            ; is page 2 top one row more than page 1 top?
-            beq ssptwohigh      ; assume we moved just a single line
-            cmp #$01            ; is page 2 top one row less than page 1 top?
-            beq ssponehigh      ; assume we moved just a single line
-            ; jump is needed, repaint
-            tay
-            ldx #$00            ; reset smooth scroll parameter to 0
-            stx NudgeVal
-            stx NeedJump
-            stx NeedScroll
-            lda ShownPage
-            and #$01
-            tax
-            eor #$01
-            tay
-            lda PgOneTop, x
-            sta PgOneTop, y
-            lda #$00
-            sta PgOneOff, y
-            jmp paintpage
+            rts
             ; sync needed
 syncneeded: bcc ssptwohigh      ; branch away if page 1 is less than page 2
             ; page 1 is greater than page 2
@@ -167,9 +194,7 @@ ssptwohigh: lda ShownPage
             lsr
             ; carry set (dec p2) if we see p1, clear (inc p1) if we see p2
             ; which tells scrollmap what direction to scroll the non-visible page
-ssdoscroll: jsr scrollmap
-            sec                 ; tell the event loop we took substantial time
-            rts
+ssdoscroll: jmp scrollmap
 
 ; read a line of tiles from the map into the zero page cache ($00-$13)
 ; cache will hold index into tile graphics assets (shape x 32, each shape is 32 bytes of data)

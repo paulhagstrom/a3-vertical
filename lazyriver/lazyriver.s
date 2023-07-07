@@ -85,10 +85,28 @@ dotask:     lda #INLINEVAR
             eor #$01
             sta ShownPage
             jsr fixnudge
-            jsr clrsprites                  ; erase sprites on (newly) nonvisible page
+            ; now we have flipped, start building the nonvisible page
+GroundJmp = *+1
+            lda #INLINEVAR                  ; neg (map dec) if ground jumps down, pos (map inc) if up
+            beq :+                          ; branch away if ground is not jumping
+            ; we are jumping
+            tax                             ; stash jump direction in X
+            jsr jumpscroll                  ; jump and repaint page (uses direction in X)
+            lda #$00
+            sta GroundJmp                   ; reset GroundJmp
+            jmp evjumped
+            ; we are not jumping but might still be syncing to a jump
+:           jsr syncjump                    ; check if we need to sync to a jump
+            bcs :+                          ; branch away if we didn't need to sync to a jump
+evjumped:   jsr byesprites                  ; forget we drew sprites on the nonvisible page
+            lda #$00
+            sta VBLTick                     ; reset VBLTick so we don't slow down due to jumping
+            beq evmove                      ; branch always
+            ; not jumping and not syncing to a jump, so erase sprites, sync background, scroll if needed
+:           jsr clrsprites                  ; erase sprites on (newly) nonvisible page
             jsr syncscroll                  ; sync ground scroll on nonvis page with vis page
             jsr fixscroll                   ; scroll ground on nonvisible page if needed
-            jsr domove                      ; do movement processing
+evmove:     jsr domove                      ; do movement processing
             jsr drawstatus                  ; draw score
             jsr setsprites                  ; draw sprites on nonvisible page
             inc TasksDone
@@ -205,13 +223,13 @@ KeyFlag = *+1
             jmp keydone
 :           cmp #$C5            ; E (up, jump ground down)
             bne :+
-            lda #<-16
-            sta GroundVel
+            lda #$FF
+            sta GroundJmp
             jmp keydone
 :           cmp #$C3            ; C (up, jump ground up)
             bne :+
-            lda #16
-            sta GroundVel
+            lda #$01
+            sta GroundJmp
             jmp keydone
 :           cmp #$D8            ; X (exit)
             bne keydone            
@@ -322,11 +340,10 @@ gameinit:   sei                 ; no interrupts while we are setting up
             lda #$00            
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
-            sta NeedScroll      ;
-            sta NeedJump        ;
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive
+            sta GroundJmp       ; ground velocity, can be negative, zero, or positive
             lda #<D_PAGEONE     ; inline in the interrupt handler
             sta ShownPage       ; visible page, HBL uses this to know where to switch to
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
