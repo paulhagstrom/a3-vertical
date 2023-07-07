@@ -84,8 +84,25 @@
 ; value for NeedScroll is: 0=stop, neg=map down/dec offset, pos=map up/inc offset
 
 fixscroll:  clc                 ; carry clear = "scroll up"
+NeedJump = *+1
+            lda #INLINEVAR      ; 0 - no jump needed, otherwise holds new top map line
+            beq :+
+            ldy #$00            ; reset smooth scroll parameter to 0
+            sty NudgeVal
+            sty NeedJump
+            sty NeedScroll
+            tay
+            lda ShownPage
+            and #$01
+            eor #$01
+            tax
+            tya
+            sta PgOneTop, x
+            lda #$00
+            sta PgOneOff, x
+            jmp paintpage
 NeedScroll = *+1
-            lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
+:           lda #INLINEVAR      ; 0 - no scroll needed, >7F map down, else map up
             beq noscroll
             bmi scrolldn
             bcc scrollup        ; branch always
@@ -107,17 +124,39 @@ noscroll:   rts
 ; scrollmap always operates on the page we are not looking at
 
 syncscroll: lda PgOneTop
-            cmp PgTwoTop
-            bne syncneeded      ; branch if top row is different - sync is necessary
+            sec
+            sbc PgTwoTop
+            bne syncjump        ; branch if top row is different - sync is necessary
             lda PgOneOff        ; if rows are the same, check if offsets are the same
             cmp PgTwoOff
             bne syncneeded      ; branch if offset is different - sync is necessary
             clc                 ; equal also means carry set, so need to clear
             rts                 ; return, indicating that we spent no time
+            ; sync needed but jump may be necessary
+syncjump:   cmp #<-1            ; is page 2 top one row more than page 1 top?
+            beq ssptwohigh      ; assume we moved just a single line
+            cmp #$01            ; is page 2 top one row less than page 1 top?
+            beq ssponehigh      ; assume we moved just a single line
+            ; jump is needed, repaint
+            tay
+            ldx #$00            ; reset smooth scroll parameter to 0
+            stx NudgeVal
+            stx NeedJump
+            stx NeedScroll
+            lda ShownPage
+            and #$01
+            tax
+            eor #$01
+            tay
+            lda PgOneTop, x
+            sta PgOneTop, y
+            lda #$00
+            sta PgOneOff, y
+            jmp paintpage
             ; sync needed
 syncneeded: bcc ssptwohigh      ; branch away if page 1 is less than page 2
             ; page 1 is greater than page 2
-            lda ShownPage
+ssponehigh: lda ShownPage
             lsr
             ; carry clear (inc p2) if we see p1, set (dec p1) if we see p2
             ; which tells scrollmap what direction to scroll the non-visible page

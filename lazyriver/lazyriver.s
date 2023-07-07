@@ -5,7 +5,7 @@
             .setcpu "6502"
 
             .include "zpdef.s"
-            .org     $9F00 - 14
+            .org     $9E00 - 14
             ; note: if file gets bigger than 6144 then have to be lower than $A000
             ; start leaves  start   leaves  start   leaves
             ; 9F00  6400    9E00    6656    9D00    6912
@@ -85,8 +85,6 @@ dotask:     lda #INLINEVAR
             eor #$01
             sta ShownPage
             jsr fixnudge
-            ;lda #$00
-            ;sta ZDebugN                     ; restart log
             jsr clrsprites                  ; erase sprites on (newly) nonvisible page
             jsr syncscroll                  ; sync ground scroll on nonvis page with vis page
             jsr fixscroll                   ; scroll ground on nonvisible page if needed
@@ -205,7 +203,17 @@ KeyFlag = *+1
             lda #$FF
             sta GroundVel
             jmp keydone
-:           cmp #$C5            ; E (exit)
+:           cmp #$C5            ; E (up, jump ground down)
+            bne :+
+            lda #<-16
+            sta GroundVel
+            jmp keydone
+:           cmp #$C3            ; C (up, jump ground up)
+            bne :+
+            lda #16
+            sta GroundVel
+            jmp keydone
+:           cmp #$D8            ; X (exit)
             bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
 keydone:    lda #$00
@@ -315,6 +323,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             sta PgOneOff        ; scroll offset 0 - page 1
             sta PgTwoOff        ; scroll offset 0 - page 2
             sta NeedScroll      ;
+            sta NeedJump        ;
             sta ExitFlag        ; reset quit signal (detected in event loop)
             sta KeyCaught
             sta GroundVel       ; ground velocity, can be negative, zero, or positive

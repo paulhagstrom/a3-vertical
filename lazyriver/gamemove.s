@@ -10,7 +10,16 @@ domove:     lda ShownPage
             beq dmplayer        ; branch if not moving vertically
             bmi dmgnddown       ; branch if ground down, offset decreasing
             ; ground scrolls up, offset increasing
-            lda #$01            ; map will be scrolling up, adding to offset
+            cmp #$01            ; is this a scroll or a jump?
+            beq dmupscroll      ; branch away if it is a scroll
+            lda PgOneTop, x     ; check to see if we are too close to the bottom
+            cmp #229            ; last possible (jumpable) top row?
+            bcs dmplayer        ; branch away if no room to jump
+            clc
+            adc #$02            ; this is how far jumping goes
+            sta NeedJump
+            bne dmplayer        ; branch always
+dmupscroll: lda #$01            ; map will be scrolling up, adding to offset
             ldy PgOneTop, x     ; check to see if we are at the bottom
             cpy #231            ; last possible top row?
             bne dmgndmove       ; no, so proceed
@@ -19,7 +28,16 @@ domove:     lda ShownPage
             bcs dmplayer        ; if at the very bottom, do not move
             bcc dmgndmove       ; branch always - otherwise, move
             ; ground scrolls down, offset decreasing
-dmgnddown:  lda #$FF            ; map will be scrolling down, subtracting from offset
+dmgnddown:  cmp #<-1            ; is this a scroll or a jump?
+            beq dmdnscroll      ; branch away if it is a scroll           
+            lda PgOneTop, x     ; check to see if we are too close to the top
+            cmp #2              ; last possible (jumpable) top row?
+            bcc dmplayer        ; branch away if no room to jump
+            sec
+            sbc #$02            ; this is how far jumping goes
+            sta NeedJump
+            bne dmplayer
+dmdnscroll: lda #$FF            ; map will be scrolling down, subtracting from offset
             ldy PgOneTop, x     ; check to see if we are at the top
             bne dmgndmove       ; if not at top map line, up is for sure ok
             ldy PgOneOff, x     ; in top map line, at top offset?
