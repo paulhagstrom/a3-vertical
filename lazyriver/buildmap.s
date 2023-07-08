@@ -7,7 +7,7 @@
 
 ; Map data and tile and sprite graphics data are in bank 1
 ; Element tracking variables and background caches are in bank 2
-; Map data lives from $0000-13FF (bank 1)
+; Map data lives from $0000-13FF (bank 1) <- note: must access from bank 0.
 ; Tile data from $1400-14FF (bank 1)
 ; Sprite data from $1500-7EFF (bank 1)
 ; Element tracking variables from $300-AFF (bank 2)
@@ -44,8 +44,11 @@ ProxL:      .byte 0         ; tile at which we are 2 from left shore
 ProxR:      .byte 0         ; countdown to 2 from right shore
 MapLine:    .byte 0         ; current map line being built
 
+            ; NOTE: because I'm using the bottom of the bank for map data
+            ; we need to put it at "$8000" in bank 0, which is the same
+            ; as $0000 in bank 1.
             ; fill in the map start address lookup table
-buildmap:   ldx #$00        ; high byte of map address
+buildmap:   ldx #$80        ; high byte of map address
             ldy #$00        ; line of map we are on
             tya             ; coincidentally, low byte of map address
 bmidxmap:   sta MapLineL, y

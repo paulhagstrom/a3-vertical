@@ -47,19 +47,6 @@ GameScore:  .byte   0, 0, 0
 
 NumLogs:    .byte   0                       ; number of logs on map (zero based)
 
-; The following settings govern when how often the movement clock goes off, and when
-; the page swaps, in VBLs.  This is kind of set by guesswork and trial and error.
-; Need to leave enough time in MoveDelay to allow drawing/erasing sprites,
-; scrolling both pages.  Need to set FlipTick late enough that movement, draw sprites, 
-; and one scroll can happen first, before reaching FlipTick (so it waits for the VBL).
-; Beyond that, no problem setting them higher to slow down game speed for difficulty management.
-; VBLTick   00: do movement computations (scroll? sprites? collisions?) (1 tick?)
-;           06- scroll page B if needed (1 tick?)
-;           05- draw sprites on page B (1 tick?)
-;           03- flip to page A (swap B and A meanings)
-;           02- erase sprites on page B (1 tick?)
-;           01- scroll page B to match page A (if they don't already match) (1 tick?)
-
 ; main game event loop
 
 ExitFlag = *+1                              ; keyboard handler makes this nonzero to trigger exit
@@ -288,11 +275,12 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; set up the pointers to go to the correct banks so we can just presume they are set.
 
 setmemory:  lda #$81                    ; bank 1
-            sta ZMapPtr + XByte         ; map is in bank 1 (buildmap, mapscroll)
             sta ZPtrSprA + XByte        ; sprite data are in bank 1 (artdefine, sprite)
             sta ZPtrSprB + XByte        ; sprite data are in bank 1 (artdefine, sprite)
             sta ZPtrMaskA + XByte       ; sprite masks are in bank 1 (artdefine, sprite)
             sta ZPtrMaskB + XByte       ; sprite masks are in bank 1 (artdefine, sprite)
+            lda #$80                    ; map is in bank 1 but must be accessed from bank 0
+            sta ZMapPtr + XByte         ; map is in bank 1 (buildmap, mapscroll)
             lda #$82                    ; bank 2
             sta ZPtrCacheA + XByte      ; background cache A (sprite)
             sta ZPtrCacheB + XByte      ; background cache B (sprite)

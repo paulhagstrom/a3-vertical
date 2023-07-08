@@ -98,8 +98,8 @@ gndtrack:   ldy #SprPlayer      ; player sprite
             bcs gtbotscr
             ; player is in the middle of the screen
             lda (ZSprYV), y
-            sta GroundVel       ; scroll the same direction as player
-            rts                 ; do nothing if player is midscreen
+            sta GroundVel       ; scroll the same direction as player is moving
+            rts
             ; player is in the lower third of the screen
 gtbotscr:   lda (ZSprY), y      ; if player is way at the bottom, no jumping
             cmp #252
@@ -140,15 +140,17 @@ jumpscroll: lda ShownPage
             cmp #(232-JumpRows) ; last possible (jump-down-from-able) top row?
             bcc jsupok          ; branch away if there is room to jump
             lda #232            ; jump to last row
-            bne jsdojump
+            bne jsdojump        ; branch always
 jsupok:     clc
             adc #JumpRows       ; jump ahead JumpRows rows
             bne jsdojump        ; branch always
             ; ground jumping down (map row decreasing)
 jsdown:     lda PgOneTop, y     ; check to see if we are too close to the top
             cmp #JumpRows       ; last possible (jump-up-from-able) top row?
-            bcc jsnope          ; branch away if no room to jump
-            sec
+            bcs jsdownok        ; branch away if there is room to jump
+            lda #$00            ; jump to the first row
+            beq jsdojump        ; branch always
+jsdownok:   sec
             sbc #JumpRows       ; jump back JumpRows rows
 jsdojump:   sta PgOneTop, y     ; update map top
             lda #$00            ; zero out offset
