@@ -109,6 +109,7 @@ evjumped:   jsr byesprites                  ; forget we drew sprites on the nonv
 evmove:     jsr domove                      ; do movement processing
             jsr drawstatus                  ; draw score
             jsr setsprites                  ; draw sprites on nonvisible page
+            jsr gndtrack                    ; adjust groundspeed based on player position
             inc TasksDone
             lda VBLTick                     ; check if VBLTick > MoveDelay
             cmp MoveDelay
@@ -323,7 +324,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$07            ; number of logs (0-based), this ought to be level-dependent
+            lda #$02            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             jsr setmemory       ; set up pointer pages
             jsr splash          ; show title screen
@@ -351,7 +352,8 @@ gameinit:   sei                 ; no interrupts while we are setting up
             bit SS_XNX
             bit SS_NXX
             jsr loadstatc
-            jsr paintpage       ; paint whole map (onto page 2, nonvisible page)
+            ldy #$01            ; point to nonvisible page (2) for initial painting
+            jsr paintpage       ; paint whole map
             jsr copypage        ; copy page 2 to page 1
             jsr paintstat       ; paint status area
             jsr setupenv        ; arm interrupts

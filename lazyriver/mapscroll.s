@@ -78,7 +78,54 @@
 ; about 21580 cycles per refresh from which to figure how our fps is.
 ;
 
-JumpRows = 2
+; called at the end of the frame painting, adjust the ground speed
+; based on where the player is and what direction the player is moving.
+; Relies on ZPgIndex being set already (setsprites).
+gndtrack:   ldy #SprPlayer      ; player sprite
+            ldx ZPgIndex        ; nonvisible page
+            lda (ZSprYV), y     ; player y velocity
+            bne :+              ; branch away if player is moving
+            lda #$00            ; if player is not moving, stop the scroll
+            sta GroundVel
+            rts
+:           lda (ZSprY), y      ; player map y-coordinate
+            sec
+            sbc PgOneTop, x
+            tax
+            cmp #$08
+            bcc gttopscr
+            cmp #$10
+            bcs gtbotscr
+            ; player is in the middle of the screen
+            lda (ZSprYV), y
+            sta GroundVel       ; scroll the same direction as player
+            rts                 ; do nothing if player is midscreen
+            ; player is in the lower third of the screen
+gtbotscr:   lda (ZSprY), y      ; if player is way at the bottom, no jumping
+            cmp #252
+            bcs :+
+            lda (ZSprYV), y     ; if player is heading upwards, let it ride
+            bmi :+
+            sta GroundVel       ; scroll ground up
+            cpx #$15
+            bcc :+
+            ; player is right at the end of the screen
+            sta GroundJmp       ; jump ground up
+:           rts
+            ; player is in the upper third of the screen
+gttopscr:   lda (ZSprY), y      ; if player is way at the top, no jumping
+            cmp #$02
+            bcc :+
+            lda (ZSprYV), y     ; if player is heading downward, let it ride
+            bpl :+
+            sta GroundVel       ; scroll ground down
+            cpx #$02
+            bcs :+
+            ; player is right near the top of the screen
+            sta GroundJmp       ; jump ground down
+:           rts
+
+JumpRows = 20
 
 ; jump the nonvisible page and repaint it (if we are moving more than 1 line)
 ; x holds the direction we intend to jump (neg if top row is degreasing, pos if increasing)
@@ -86,15 +133,15 @@ jumpscroll: lda ShownPage
             eor #$01            ; switch focus to nonvisible page
             and #$01            ; 0 if page 1 is nonvisible, 1 if page 2 is nonvisible
             tay
-            lda #$00            ; reset scroll offset on nonvisible page
-            sta PgOneOff, y
             txa
             bmi jsdown          ; branch away if jumping down (map row decreasing)
             ; ground jumping up (map row increasing)
             lda PgOneTop, y     ; check to see if we are too close to the bottom
-            cmp #(231-JumpRows) ; last possible (jump-down-from-able) top row?
-            bcs jsnope          ; branch away if no room to jump
-            clc
+            cmp #(232-JumpRows) ; last possible (jump-down-from-able) top row?
+            bcc jsupok          ; branch away if there is room to jump
+            lda #232            ; jump to last row
+            bne jsdojump
+jsupok:     clc
             adc #JumpRows       ; jump ahead JumpRows rows
             bne jsdojump        ; branch always
             ; ground jumping down (map row decreasing)
@@ -298,6 +345,7 @@ PLLineD = *+1
             rts
 
 ; paint the whole page (called at the outset) on the nonvisible page
+; assumes that y points to the nonvisible page (0=page 1, 1=page 2) on entry
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; assumes smooth scroll offset is 0
 ; will be followed by a call to copypage that will copy our work over to page 1
@@ -307,7 +355,7 @@ paintpage:  lda R_BANK          ; save bank (but assume we are already in 1A00 Z
             jsr gfxinit         ; set up pointers and switch banks (paintline needs it)
             lda #$BF            ; we are drawing from the bottom up
             sta ZCurrScrL       ; current screen line
-            lda PgOneTop        ; map line of the top row on the screen
+            lda PgOneTop, y ; map line of the top row on the screen
             clc
             adc #22             ; +22 to get to map line of bottom row
             sta ZCurrMapL       ; becomes the current line

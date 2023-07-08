@@ -166,9 +166,11 @@ msgovert:   lda (ZSprYV), y     ; handle movement in Y coordinate
             and #$07            ; wrap offset
             sta ZNewYOff
             lda ZOldY           ; should move to next tile down
-            cmp #254            ; if we are not already as far down as we can go
+            cmp #252            ; if we are not already as far down as we can go
             bcc :+              ; branch away if we can move further down
             sta ZNewY           ; stay in the same place
+            lda #$00            ; and stop
+            sta (ZSprYV), y
             lda #$07            ; stop at offset 7 (in case we were not already there)
             sta ZNewYOff
             rts                 ; done
@@ -187,8 +189,9 @@ msgoup:     clc                 ; sprite is moving up
             lda ZOldY           ; should move to the next tile up
             bne :+              ; branch away if we can move further up
             sta ZNewY           ; stay in the same place
-            lda #$00            ; stop at offset 0 (in case we were not already there)
-            sta ZNewYOff
+            lda #$00            ; and stop
+            sta (ZSprYV), y
+            sta ZNewYOff        ; stop at offset 0 (in case we were not already there)
             rts                 ; done
 :           sec
             sbc #$01            ; decrease Y
