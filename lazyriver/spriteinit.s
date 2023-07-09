@@ -88,6 +88,13 @@ spriteinit:
             stx ZPrevYOff + 1
             inx                 ; $E00
             lda #$00
+            sta ZSprCollH
+            stx ZSprCollH + 1
+            lda #$80
+            sta ZSprCollL
+            stx ZSprCollL + 1
+            inx                 ; $F00
+            lda #$00
             sta ZSprMvTick
             stx ZSprMvTick + 1
             lda #$82            ; bank 2
@@ -114,6 +121,8 @@ spriteinit:
             sta ZPrevY + XByte
             sta ZPrevXOff + XByte
             sta ZPrevYOff + XByte
+            sta ZSprCollH + XByte
+            sta ZSprCollL + XByte
 
             ; place some logs
             lda NumLogs
@@ -214,6 +223,23 @@ sprfinish:  sta (ZSprType), y       ; A=sprite type
             clc
             adc #$15                ; add to overall sprite data start ($1500)
             sta (ZSprSprH), y
+            lda (ZSprType), y       ; recall sprite type (to find collision masks)
+            and #$01                ; it sprite even or odd?
+            lsr
+            ror
+            ror                     ; even starts at $00, odd starts at $40
+            sta (ZSprCollL), y
+            lda (ZSprType), y       ; recall sprite type (to find collision masks)
+            lsr                     ; int(sprite/2)
+            sta (ZSprCollH), y
+            asl
+            asl
+            asl                     ; 8 * int(sprite/2)
+            sec
+            sbc (ZSprCollH), y      ; minus int(sprite/2) (making 7*int(sprite/2))
+            clc
+            adc #$59                ; collision mask base is $5900
+            sta (ZSprCollH), y
             lda #$00
             sta (ZSprXV), y         ; x velocity
             sta (ZSprYV), y         ; y velocity

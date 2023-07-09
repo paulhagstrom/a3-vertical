@@ -71,6 +71,8 @@ ZPrevX      = $56   ; pointer to sprite X pre-movement
 ZPrevY      = $58   ; pointer to sprite Y pre-movement
 ZPrevXOff   = $5A   ; pointer to sprite X offset pre-movement
 ZPrevYOff   = $5C   ; pointer to sprite Y offset pre-movement
+ZSprCollH   = $5E   ; pointer to high byte of sprite collision mask
+ZSprCollL   = $60   ; pointer to low byte of sprite collision mask
 
 ; variables used during movement processing
 ZCollODiff  = $63   ; collision check offset difference
@@ -82,9 +84,9 @@ ZRefYStart  = $68   ; reference sprite y comparison start
 ZOldYLine   = $69   ; reference sprite y line
 ZOldYOff    = $6A   ; reference sprite offset
 ZCurrXStart = $6B   ; current sprite - x column comparison start
-ZCurrXEnd   = $6C   ; current sprite - x column comparison end
+;ZCurrXEnd   = $6C   ; current sprite - x column comparison end
 ZRefXStart  = $6D   ; reference sprite - x column comparison start
-ZRefXEnd    = $6E   ; reference sprite - x column comparison end
+ZCollStash  = $6E   ; collision detect stash byte
 ZOverXLeft  = $6F   ; overlap window left
 ZOverXRight = $70   ; overlap window right
 ZOverYTop   = $71   ; overlap window top
@@ -100,7 +102,7 @@ ZNewX       = $7B   ; postmovement X
 ZNewXOff    = $7C   ; postmovement X offset
 ZNewY       = $7D   ; postmovement Y
 ZNewYOff    = $7E   ; postmovement Y offset
-ZBytesLeft  = $7f   ; countdown of bytes left in collision detection
+ZBytesLeft  = $7F   ; countdown of bytes left in collision detection
 
 ZRastCache  = $80   ; 8 bytes of adjusted y coordinates for drawing sprites
 

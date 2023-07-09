@@ -5,7 +5,7 @@
             .setcpu "6502"
 
             .include "zpdef.s"
-            .org     $9E00 - 14
+            .org     $9D00 - 14
             ; note: if file gets bigger than 6144 then have to be lower than $A000
             ; start leaves  start   leaves  start   leaves
             ; 9F00  6400    9E00    6656    9D00    6912
@@ -312,7 +312,7 @@ gameinit:   sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$02            ; number of logs (0-based), this ought to be level-dependent
+            lda #$07            ; number of logs (0-based), this ought to be level-dependent
             sta NumLogs
             jsr setmemory       ; set up pointer pages
             jsr splash          ; show title screen

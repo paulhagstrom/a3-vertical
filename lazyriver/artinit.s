@@ -33,13 +33,55 @@
 ;   $2A00: [spr 3 pg A ln 0 shft 0 frm 0 data] ... [spr 1 pg B ln 7 shft 0 frm 0 mask] ...
 ;   $3100: [spr 4 pg A ln 0 shft 0 frm 0 data] ... [spr 1 pg B ln 7 shft 0 frm 0 mask] ...
 ;   ...
+;   $5200: [spr 9 pg A ln 0 shft 0 frm 0 data] ... [spr 9 pg B ln 7 shft 0 frm 0 mask] ...
+;   ...
 ;   $7700: [spr 14 pg A ln 0 shft 0 frm 0 data] ... [spr 14 pg B ln 7 shft 0 frm 0 mask] ...
 ;   That is: If sprite start is at $XX00
 ;   Data page A starts at $XX00 + (shift * $100) + (frame * $80)
 ;   Data page B starts at $XX00 + (shift * $100) + (frame * $80) + $20
 ;   Mask page A starts at $XX00 + (shift * $100) + (frame * $80) + $40
 ;   Mask page B starts at $XX00 + (shift * $100) + (frame * $80) + $60
-
+;
+; Masks for drawing are the inverse of what we want masks to be for collisions
+; So since memory is abundant and time is not, we will also generate the reverse
+; masks for collisions.  Because the memory organization above was so pleasing
+; we'll leave that untouched and add a new run for sprite collision masks.
+;
+; There are room for 10 sprites (0-9), data and drawing masks from $1500-58FF.
+; After that will be a block of collision masks, from $5900-76FF
+; math will be slightly easier if I interleave them so frame can still be x$80.
+; two sprites per $700 bytes, five blocks of $700 bytes
+; sprite start is $5900 + (int(sprite / 2) * 700) +  ($40 * sprite mod 2)
+; mask A is $XX00 + (shift * $100) + (frame * $80)
+; mask B is $XX00 + (shift * $100) + (frame * $80) + $20
+; 
+; I'm presently only using 4 log types and a player for sprites, which is
+; just 5 of the otherwise available 15.  I don't need all that space for this.
+; Masks require $20 bytes per sprite (8 lines, 8 bytes)
+; but then spread across $700 to account for shifts.  And two frames per sprite.
+; We can fit 2 in per page, twice as many as when we had also data.
+; We can keep the math basically the same:
+; if sprite mask start is at $XX00
+; Collision Mask A starts at $XX00 + (shift * $100) + (frame * $80)
+; Collision Mask B starts at $XX00 + (shift * $100) + (frame * $80) + $20
+; and sprite start is $XX00 + (sprite * $80)?
+; well, anyway.  I need $380 per sprite, half of what sprites cost above.
+; so if I have 4 sprites, I need to reserve $E00. (lost 2 slots)
+; if I have 8 sprites, I need to reserve $1C00 (lost 4 slots).
+; what if I had 10?
+; sprite 0 $1500, sprite 9 $5200, ends at $58FF.
+; masks:
+; sprite 0 $5900, sprite 1 $5980, 2 $6000, 4 $6700, 8 $6E00, 10 $7700
+; so let's go with 8.  That sounds round and intentional anyway.
+;; 
+;
+; So sprite starts will be:
+;   $15 (0)     $1C (1)     $23 (2)     $2A (3)     $31 (4)     $38 (5)     $3F (6)
+;   $46 (7)     $4D (8)     $52 (9)     $59 (10)    $60 (11)    $67 (12)    $6E (13)
+;   $77 (14)    ($7E)
+;
+; 
+;
 ; Apple 3 hires graphics format is as follows.  The pixels are shown
 ; "backwards" so that the most significant bits in a byte can be
 ; on the left.  Pixels 0, 2, 4, and 6 are entirely contained within
@@ -157,7 +199,67 @@ bgsprshift: jsr bgwrshift       ; write masks/data for this sprite line, this sh
             sta ZPtrSprA + 1
             dec ZSprLeft        ; NumSprites is 1-based
             bne bgsprite
-            rts
+            ; generate collision masks from drawing masks
+            ; these start at $5900, two sprites per page
+            lda #$59            ; collision masks frame 1 at $5900 (A), $5920 (B)
+            sta ZPtrMaskA + 1
+            sta ZPtrMaskB + 1
+            lda #$00
+            sta ZPtrMaskA
+            lda #$80            ; collision masks frame 2 at $5980 (A), $59A0 (B)
+            sta ZPtrMaskB
+            lda #$15            ; drawing masks frame 1 at $1540 (A) and $1560 (B)
+            lda ZPtrSprA + 1
+            lda ZPtrSprB + 1
+            lda #$40
+            sta ZPtrSprA
+            lda #$C0            ; drawing masks frame 2 at $15C0 (A) and $15E0 (B)
+            sta ZPtrSprB
+            lda #10             ; transform all 10 slots even if we don't use all
+            sta ZSprLeft
+:           ldx #$06            ; seven shifts
+:           ldy #$3F            ; $40 bytes for both A and B (8 bytes), 8 lines.
+:           lda (ZPtrSprA), y   ; frame 1 mask (A and B)
+            eor #$FF
+            and #$7F
+            sta (ZPtrMaskA), y
+            lda (ZPtrSprB), y   ; frame 2 mask (A and B)
+            eor #$FF            ; invert
+            and #$7F            ; zero out the high bit
+            sta (ZPtrMaskB), y
+            dey
+            bpl :-
+            inc ZPtrMaskA + 1   ; move to next shift
+            inc ZPtrMaskB + 1
+            inc ZPtrSprA + 1
+            inc ZPtrSprB + 1
+            dex
+            bpl :--
+            dec ZSprLeft        ; have we now done all the sprites?
+            beq :++             ; yes, done
+            ; move to next sprite - ZPtrSpr is already correct
+            ; ZPtrMask either moves +40-700 or -40
+            lda ZPtrMaskA
+            beq :+
+            ; we just did second sprite in a pair, so retreat $40
+            lda #$00
+            sta ZPtrMaskA
+            sta ZPtrMaskB
+            beq :---
+            ; we just did first sprite in the pair, advance $40, retreat $700
+:           lda #$40
+            sta ZPtrMaskA
+            sta ZPtrMaskB
+            lda ZPtrMaskA + 1
+            sec
+            sbc #$07
+            sta ZPtrMaskA + 1
+            lda ZPtrMaskB + 1
+            sec
+            sbc #$07
+            sta ZPtrMaskB + 1
+            bne :----
+:           rts
 
 ; shift all pixels in the 2-tile buffer to the right
 ; pi pj pk pl pm pn po pp
