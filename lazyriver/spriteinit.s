@@ -168,6 +168,7 @@ placelog:   ldy Seed                ; pick a map row
             and #$03                ; between 0 and 3
             clc
             adc #$02                ; well, between 2 and 5
+            lda #$00                ; well, actually, just zero
             sta (ZSprDelay), y
             inx                     ; pick a animation period
             inc Seed

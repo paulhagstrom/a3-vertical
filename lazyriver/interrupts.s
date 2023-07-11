@@ -86,10 +86,10 @@ intkey:     lda IO_KEY          ;4 load keyboard register
 nothbl:     lda RE_INTFLAG      ;4 check for other interrupts
             lsr                 ;2 check for keyboard ($01)
             bcs intkey          ;2/3 if yes, go handle it [after 21]
-            lsr                 ;2 check for clock ($02)
-            bcs intclock        ;2/3 if yes, go handle it [after 25]
-            and #$04            ;2 was it VBL? ($10 but we rotated right twice already)
+            and #$08            ;2 was it VBL? ($10 but we rotated right already)
             bne intvbl          ;2/3 if yes, go handle it [after 29]
+            bit RE_INTFLAG      ;2 check for timer 1 ($02)
+            bvs intclock        ;2/3 if yes, go handle it [after 25]
             pla                 ;4
             rti                 ;6 [38 if we did not recognize an interrupt]
 
@@ -123,8 +123,8 @@ HBLatTop = *+1
             lda #183            ;2 reset the HBL counter for the very end of the screen
             sta RE_T2CL         ;4
             lda #$00            ;2
-            sta RE_T2CH         ;4 
             sta HBLatTop
+            sta RE_T2CH         ;4 
             ;nop
             ;nop
             ;nop
@@ -162,7 +162,6 @@ endhbl:     nop
             bne clockout
             
 ; timer1 interrupt handler, to handle audio
-; skipped for simplicity, maybe add in later.
 ; 25 cycles to get here
 ; for now though it won't be used because the interrupt isn't turned on.
 ; first thing we do is send the sound to the DAC so that it can be done very regularly
@@ -171,7 +170,7 @@ endhbl:     nop
 ; to fire a sound, have ZFXPtr set to point to it, make FXPlaying nonzero,
 ; sound will stop when it hits a sample with the high bit set.
 
-intclock:   lda #$02            ;2 clear the timer1 interrupt
+intclock:   lda #$40            ;2 clear the timer1 interrupt
             sta RE_INTFLAG      ;4
 PlaySound = *+1                 ; play sound effects switch (user controlled)
             lda #INLINEVAR      ;2 check to see if we are supposed to be playing sound
@@ -218,12 +217,10 @@ setupenv:   ; save IRQ vector and then install ours
             sta IRQVECT + 2
             lda #$00
             sta FXPlaying       ; no sound effect currently playing
-            sta PlaySound       ; no sound effects play at all
-            sta ZFXPtr
-            lda #$81            ; sound information in bank 1
-            sta ZSoundPtr + XByte
+            ;sta PlaySound       ; no sound effects play at all
+            ;sta ZFXPtr
+            lda #$82            ; sound information in bank 2
             sta ZFXPtr + XByte
-            ; TODO: set up sound and screen splitting variables if used
 
             ; bank register - $FFEF - E-VIA input register A
             ; ZP register - $FFD0 - D-VIA input/output register B
@@ -307,7 +304,8 @@ setupenv:   ; save IRQ vector and then install ours
             sta RD_PERCTL
             
             ; disable & clear certain E-VIA interrupts (MSB=clear, other bits=interrupts)
-            ; not sure why only some are disabled and cleared, this is based on Atomic Defense
+            ; not sure why only some are disabled and cleared, this is based on Atomic Defense.
+            ; This is largely undone immediately afterwards.  Probably could use some thought.
             ; E-VIA Int -  flag $FFED, enable $FFEE
             ;     0------- disable
             ;     -0------ timer 1
@@ -342,12 +340,8 @@ setupenv:   ; save IRQ vector and then install ours
             ; T2 can count PB6 negatives, or run in one shot mode.
             ; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
             ; PB6 appears to be (at least?) HBL.
-            ; E-VIA: enable timer 2, one-shot.  HBL.
-            ; was this
-            ;lda #%00100000
-            ;     00100000 - timer2 count down pulses on PB6 (HBL)
-            ;     01100000 - timer1 continuous (restart when hits zero)
-            lda #%11100000 ; enable timer1 and timer2
+            ; E-VIA: enable timer 2, one-shot.  HBL.  And enable timer 1 continuous
+            lda #%11100000 ; enable timer1 (continuous) and timer2 (one-shot, no shift reg)
             sta RE_AUXCTL
             
             ; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL
@@ -356,17 +350,6 @@ setupenv:   ; save IRQ vector and then install ours
             ; CA2     001- lo nibble independent interrupt input neg edge (keyboard)
             ; CA1     ---0 lo nibble neg active edge (clock)
             lda #%01100010
-            ; none below helps the drawing of a single hires line at the top on real hw
-            ; so: CB2 bits at the top have no effect
-            ;lda #%11100010
-            ;lda #%11000010
-            ;lda #%00000010
-            ;lda #%01000010
-            ;lda #%00100010 ; neg active edge?  CB2 may be VBLx8.
-            ; both of the ones below result in not even switching into text mode at all
-            ; so CB1 bit probably is setting it to fire at the end of VBL.
-            ;lda #%00110010 ; neg active edge?  CB2 may be VBLx8.
-            ;lda #%01110010 ; neg active edge?  CB2 may be VBLx8.
             sta RE_PERCTL
             
             ; E-VIA Int Enable
@@ -379,7 +362,10 @@ setupenv:   ; save IRQ vector and then install ours
             ;     ------0- CA1 (clock)
             ;     -------1 CA2 (keyboard)
             ; E-VIA - enable timer2 (HBL), CB1 (VBL), CA2 (keyboard)
-            lda #%10110001
+            ; E-VIA - enable timer2 (HBL), CB1 (VBL), CA2 (keyboard), CA1 (RTC)
+            ;lda #%10110001
+            lda #%10110011
+            lda #%11110001  ; try actual timer 1 and not clock
             sta RE_INTENAB
             
             ; E-VIA Int Flag
@@ -392,13 +378,16 @@ setupenv:   ; save IRQ vector and then install ours
             ;     ------0- CA1 (clock)
             ;     -------1 CA2 (keyboard)
             ; clear timer2, CB1, CA2
-            lda #%00110001
+            ;lda #%00110001
+            ; clear timer2, CB1, CA2, CA1
+            lda #%00110011
+            ;lda #%01110011
             sta RE_INTFLAG
-            ; set up the clock timer for audio -- later
-            ;lda #$10            ; clock interval is $410, this is the $10 part.
-            ;sta RE_T1CL         
+            ; set up the clock timer for audio
+            lda #$00            ; clock interval is $800
+            sta RE_T1CL         
             ;lda #%10000010      ; enable CA1 (RTC)
             ;sta RE_INTENAB
-            ;lda #$04
-            ;sta RE_T1CH         ; start the clock for $410 cycles
+            lda #$08
+            sta RE_T1CH         ; start the clock for $800 cycles
             rts

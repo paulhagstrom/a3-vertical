@@ -5,7 +5,7 @@
             .setcpu "6502"
 
             .include "zpdef.s"
-            .org     $9D00 - 14
+            .org     $9C00 - 14
             ; note: if file gets bigger than 6144 then have to be lower than $A000
             ; start leaves  start   leaves  start   leaves
             ; 9F00  6400    9E00    6656    9D00    6912
@@ -26,8 +26,9 @@ CodeStart:  jmp gameinit
             .include "artinit.s"            ; transform art definitions to usable form
             .include "buildmap.s"           ; generate the map
             .include "spriteinit.s"         ; initialize the sprites
-;            .include "buildsound.s"
+            .include "buildsound.s"
             .include "gamemove.s"           ; handle game movement
+            .include "collision.s"          ; handle sprite collisions
             .include "interrupts.s"         ; interrupt routines
             .include "lookups.s"            ; precomputed lookup tables
             .include "mapscroll.s"          ; smooth scrolling routines
@@ -284,6 +285,7 @@ setmemory:  lda #$81                    ; bank 1
             lda #$82                    ; bank 2
             sta ZPtrCacheA + XByte      ; background cache A (sprite)
             sta ZPtrCacheB + XByte      ; background cache B (sprite)
+            sta ZFXPtr + XByte          ; sound effect playing pointer
             lda #$8F                    ; bank 0 in $2000-A000
             sta ZPtrScrA + XByte        ; graphics A (e.g., 0000-1FFF)
             sta ZPtrScrB + XByte        ; graphics B (e.g., 2000-3FFF)
@@ -322,7 +324,9 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr loadstatb
             jsr buildgfx        ; define graphics assets
             jsr spriteinit      ; initialize sprites
-            ;jsr buildsfx        ; define sound effects
+            jsr buildsfx        ; define sound effects
+            lda #$01
+            sta PlaySound       ; default to sound on
             lda #232            ; top map row when we start (makes bottom row 255)
             sta PgOneTop        ; top map row - page 1
             sta PgTwoTop        ; top map row - page 2
@@ -345,8 +349,10 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr copypage        ; copy page 2 to page 1
             jsr paintstat       ; paint status area
             jsr setupenv        ; arm interrupts
-            lda #$00
+            lda #$05            ; real hardware settles to MoveDelay of 5, so start there
             sta MoveDelay       ; game clock - setting number of VBLs per movement advance
+            lda #$00
+            sta FXPlaying       ; no sound effect currently playing
             sta VBLTick         ; last act is to reset VBLTick
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit

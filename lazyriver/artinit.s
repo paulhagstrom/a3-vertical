@@ -51,36 +51,16 @@
 ; After that will be a block of collision masks, from $5900-76FF
 ; math will be slightly easier if I interleave them so frame can still be x$80.
 ; two sprites per $700 bytes, five blocks of $700 bytes
-; sprite start is $5900 + (int(sprite / 2) * 700) +  ($40 * sprite mod 2)
+; sprite start is $5900 + (int(sprite / 2) * $700) +  ($40 * sprite mod 2)
 ; mask A is $XX00 + (shift * $100) + (frame * $80)
 ; mask B is $XX00 + (shift * $100) + (frame * $80) + $20
-; 
-; I'm presently only using 4 log types and a player for sprites, which is
-; just 5 of the otherwise available 15.  I don't need all that space for this.
-; Masks require $20 bytes per sprite (8 lines, 8 bytes)
-; but then spread across $700 to account for shifts.  And two frames per sprite.
-; We can fit 2 in per page, twice as many as when we had also data.
-; We can keep the math basically the same:
-; if sprite mask start is at $XX00
-; Collision Mask A starts at $XX00 + (shift * $100) + (frame * $80)
-; Collision Mask B starts at $XX00 + (shift * $100) + (frame * $80) + $20
-; and sprite start is $XX00 + (sprite * $80)?
-; well, anyway.  I need $380 per sprite, half of what sprites cost above.
-; so if I have 4 sprites, I need to reserve $E00. (lost 2 slots)
-; if I have 8 sprites, I need to reserve $1C00 (lost 4 slots).
-; what if I had 10?
-; sprite 0 $1500, sprite 9 $5200, ends at $58FF.
-; masks:
-; sprite 0 $5900, sprite 1 $5980, 2 $6000, 4 $6700, 8 $6E00, 10 $7700
-; so let's go with 8.  That sounds round and intentional anyway.
-;; 
 ;
 ; So sprite starts will be:
-;   $15 (0)     $1C (1)     $23 (2)     $2A (3)     $31 (4)     $38 (5)     $3F (6)
-;   $46 (7)     $4D (8)     $52 (9)     $59 (10)    $60 (11)    $67 (12)    $6E (13)
-;   $77 (14)    ($7E)
-;
-; 
+;   $1500 (0)   $1C00 (1)   $2300 (2)   $2A00 (3)   $3100 (4)
+;   $3800 (5)   $3F00 (6)   $4600 (7)   $4D00 (8)   $5200 (9)
+; And collision mask starts will be:
+;   $5900 (0)   $5940 (1)   $6000 (2)   $6040 (3)   $6700 (4)
+;   $6740 (5)   $6E00 (6)   $6E40 (7)   $7700 (8)   $7740 (9)
 ;
 ; Apple 3 hires graphics format is as follows.  The pixels are shown
 ; "backwards" so that the most significant bits in a byte can be

@@ -5,15 +5,19 @@
 ; collecting the definitions in here in order to avoid inadvertent collisions
 
 ; overall memory map:
-; $400-427      text of scoreline at the top
+; $400-427      text for scoreline at the top
+; $500-5FF      collision list, higher numbered sprite
+; $600-6FF      collision list, lower numbered sprite
+; $800-827      colors for scoreline at the top
 ; $2000-9FFF    graphics buffers, page 1A, 1B, 2A, 2B (bank 0)
 ; $A000->       game code
 ; bank 1:
 ; $0000-13FF    map data (tiles, flow) (256 rows, 20 columns)
 ; $1400-14FF    tile graphic data (8 tiles, 8 lines)
-; $1500-7EFF    sprite graphic data (2 frames, 7 shifts, 8 lines, 15 sprites, $700 per)
+; $1500-58FF    sprite graphic data (2 frames, 7 shifts, 8 lines, 10 sprites, $700 per)
+; $5900-76FF    sprite collision maps ($380 per)
 ; bank 2:
-; $300-AFF      sprite tracking variables, groups of $80
+; $300-F7F      sprite tracking variables, groups of $80
 ; $1000-4FFF    sprite background caches ($1000 page 1, $3000 page 2)
 ; $5000-7EFF    sound effect data ($100 per effect) (planned)
 
@@ -107,12 +111,12 @@ ZBytesLeft  = $7F   ; countdown of bytes left in collision detection
 ZRastCache  = $80   ; 8 bytes of adjusted y coordinates for drawing sprites
 
 ZWidth      = $88   ; river width (used in buildmap)
+ZNumColl    = $89   ; collision count (length of collision list)
 
 ZMapPtr     = $8A
 ZNumPtr     = $8C   ; pointer for screen target for drawnumber
 
 ; interrupt handler
-ZSoundPtr   = $D2   ; current sample in background music
 ZFXPtr      = $D4   ; current sample in sound effect
 
 ; staging for hires3 segment bytes

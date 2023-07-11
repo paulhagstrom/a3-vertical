@@ -65,8 +65,7 @@ drawstatus: lda #<TextPageA
             lda #$8F
             sta ZNumPtr + XByte
             ; DEBUG - BEGIN - REMOVE LATER
-            ldy #SprPlayer
-            lda (ZSprY), y
+            lda MoveDelay
             jsr drawnumber
             dec ZNumPtr
             dec ZNumPtr
