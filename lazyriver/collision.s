@@ -47,65 +47,6 @@ shoreok:    dec ZCurrSpr
             bpl :---
             rts
 
-; ZNewX, ZNewXOff, ZNewY, ZNewYoff now hold the proposed new position
-; now we need to check to see if the new position is blocked
-; two things to check: shoreline and other sprites
-; to check shoreline, we can basically check the map for whether
-; ZNewX, ZNewY is on land.  If it is, we stop velocity and do not
-; move.  This could make a log stop slightly short of shore, though.
-; flow should get it moving again.  Want to allow it to move, e.g., in X
-; direction even if it can't move in Y direction.
-
-; Check collision with the shoreline and stop (possibly in one direction)
-; if the sprite hits it.
-; ticksprite must be called first (to set ZCurrSpr, ZOldX, ZOldY)
-; movesprite must be called first (to set ZNewX, ZNewY, ZNewXOff, ZNewYOff)
-;(.*)$ collshore:  ldx ZNewY           ; load map byte for proposed new position
-;(.*)$             ldy ZNewX
-;(.*)$             lda MapLineL, x
-;(.*)$             sta ZMapPtr
-;(.*)$             lda MapLineH, x
-;(.*)$             sta ZMapPtr + 1
-;(.*)$             lda (ZMapPtr), y
-;(.*)$             and #$04            ; check water bit
-;(.*)$             bne shoredone       ; done, movement lands in water, it can proceed
-;(.*)$             ; desired movement failed, check if moving just in Y direction would work
-;(.*)$             ldy ZOldX           ; check map data for original column
-;(.*)$             lda (ZMapPtr), y    ; load map data for new Y, original X
-;(.*)$             and #$04            ; check water bit
-;(.*)$             clc                 ; tell logshyok block to only zero XV
-;(.*)$             bne logshyok        ; branch away if vertical move lands in water
-;(.*)$             ; moving just vertically fails, check if moving just in X direction works
-;(.*)$             ldy ZNewX           ; load map byte for new X, original Y
-;(.*)$             ldx ZOldY
-;(.*)$             lda MapLineL, x
-;(.*)$             sta ZMapPtr
-;(.*)$             lda MapLineH, x
-;(.*)$             sta ZMapPtr + 1
-;(.*)$             lda (ZMapPtr), y
-;(.*)$             and #$04            ; check water bit
-;(.*)$             bne logshxok        ; branch away if horizontal move lands in water
-;(.*)$             ; no movement worked, so zero out velocity and stay here.
-;(.*)$             sec                 ; tell following block to zero both X and Y
-;(.*)$             ; shore impedes horizontal movement only
-;(.*)$ logshyok:   ldy ZCurrSpr
-;(.*)$             lda #$00            ; zero out X velocity
-;(.*)$             sta (ZSprXV), y
-;(.*)$             lda ZOldX           ; propose that X not move
-;(.*)$             sta ZNewX
-;(.*)$             lda (ZSprXOff), y
-;(.*)$             sta ZNewXOff
-;(.*)$             bcc shoredone       ; branch away to rts if we are only zeroing XV
-;(.*)$             ; shore impedes vertical movement only
-;(.*)$ logshxok:   ldy ZCurrSpr
-;(.*)$             lda #$00            ; zero out Y velocity
-;(.*)$             sta (ZSprYV), y
-;(.*)$             lda ZOldY           ; propose that Y not move
-;(.*)$             sta ZNewY
-;(.*)$             lda (ZSprYOff), y
-;(.*)$             sta ZNewYOff
-;(.*)$ shoredone:  rts
-
 ; check the sprite collision matrix
 
 collmatrix: ldy NumLogs         ; this is the sprite number
@@ -126,7 +67,6 @@ ccrefloop:  ldy ZRefSpr         ; compare ref sprite against all prior ones
 collskip:   jmp ccnext
             
 ; assumes that ZRefSpr is set to reference sprite
-; will check all sprites ZCurrSpr and lower against ZRefSpr
 ; and ZCurrSpr is set to first comparison sprite, will check all lower ones as well
 collpairs:  ldy ZRefSpr
             lda (ZSprY), y      ; remember ref sprite's y coordinate
@@ -140,9 +80,9 @@ collpairs:  ldy ZRefSpr
             sta ZOverYBot
             beq :+              ; skip extending bounds up if we're at the top
             dec ZOverYTop       ; one row prior can collide
-:           inc ZOverYBot
+:           inc ZOverYBot       ; one row after can collide
             bne :+              ; skip extending bounds down if we're at the bottom
-            dec ZOverYBot
+            dec ZOverYBot       ; undo the extension if extending it down wrapped
 :           lda (ZSprX), y      ; remember ref sprite's x coordinate
             sta ZOldX   
             sta ZOverXLeft
@@ -151,10 +91,9 @@ collpairs:  ldy ZRefSpr
             dec ZOverXLeft      ; one column prior can collide
 :           inc ZOverXRight     ; two columns after is the first outside the window
             inc ZOverXRight     ; (doesn't matter that it might be off map right)
-            lda (ZSprYOff), y   ; remember pre-movement y offset
+            lda (ZSprYOff), y   ; remember ref's y offset
             sta ZOldYOff
             ; we will compare the reference sprite to all lower-numbered sprites
-            ; find the details of the reference sprite (locate its mask)
             lda (ZSprCollH), y  ; locate the reference sprite's collision mask
             clc
             adc (ZSprXOff), y   ; adjust for shift
@@ -195,6 +134,8 @@ cccurloop:  ldy ZCurrSpr
             sta ZRefXStart
             sta ZCurrXStart
             beq ccy             ; branch always
+            ; BELOW IT SHOULD BE BCC AS FAR AS I CAN TELL
+            ; BUT BCS SEEMS TO LOOK LIKE IT WORKS BETTER?
 :           bcc :+
             ; reference x column precedes current, compare curr L to ref R
             lda #$02
@@ -216,15 +157,37 @@ ccy:        lda (ZSprYOff), y   ; comparison sprite's y offset
             sec
             sbc ZOldY           ; reference sprite's row
             sta ZCollRDiff      ; row difference, neg if old > new (old below new)
+            ; ZCollODiff is comparison's Y offset - reference's Y offset
+            ; and ZCollRDiff is comparison's Y row - reference's Y row
+            ; if they are in the same row but at different offsets,
+            ;   ZCollODiff being negative means comparison is higher up than reference
+            ;       so we need to check the comparison starting at the first row of
+            ;       overlap (-ZCollODiff) and the reference starting at zero.
+            ;   ZCollODiff being positive means comparison is lower down than reference
+            ;       so we need to check the reference starting at the first row of
+            ;       overlap (ZCollODiff) and comparison starting at zero
+            ; if they are in different rows, they will be one row apart, and row
+            ; difference determines which is higher (not offset difference).
+            ; Ultimately this means we add 8 to the difference between them.
+            ;   If ZCollRDiff is negative, comparison is higher up than reference
+            ;       ZCollODiff might be positive or negative
+            ;       if comparison were at offset 6 and reference were at offset 2
+            ;       then ZCollODiff would be 4, check comparison starting at 8-4, ref at 0
+            ;       if ZCollODiff is also negative, they won't overlap.
+            ;   If ZCollRDiff is positive, comparison is lower down than reference
+            ;       if reference were at offset 6 and comparison were at offset 2
+            ;       then ZCollODiff would be -4, check reference starting at 8+(-4), comp at 0
+            ;       if ZCollODiff is also positive, they won't overlap.
+            ; In this case, if they wind up more than 8 apart, they don't overlap.
             bne :+              ; branch away if map rows are different (sign is valid)
             lda ZCollODiff      ; if same row, use offset diff sign instead
-:           bpl ccoldnew        ; branch away if new is below old
-            ; old is below new
+:           bpl ccoldnew        ; branch away if comparison (new) is below ref (old)
+            ; old (reference) is below new (comparison)
             lda ZCollRDiff
             beq :+
             lda #$08            ; add 8 if they span rows
 :           sec
-            sbc ZCollODiff
+            sbc ZCollODiff      ; if in the same row, this is negative
             cmp #$08
             bcc :+
             jmp ccnext          ; no overlap
@@ -232,7 +195,7 @@ ccy:        lda (ZSprYOff), y   ; comparison sprite's y offset
             lda #$00
             sta ZRefYStart
             jmp cccomp
-            ; new is below old
+            ; new (comparison) is below old (reference)
 ccoldnew:   lda ZCollRDiff
             beq :+
             lda #$08            ; add 8 if they span rows
@@ -247,7 +210,7 @@ ccoldnew:   lda ZCollRDiff
 cccomp:     lda (ZSprCollH), y  ; locate the currsprite collision mask
             clc
             adc (ZSprXOff), y   ; adjust for shift
-            sta ZPtrSprA + 1    ; use ZPtrSpr for the currsprite mask
+            sta ZPtrSprA + 1    ; use ZPtrSpr for the comparison collision mask
             sta ZPtrSprB + 1
             lda (ZSprAnim), y
             lsr
@@ -270,8 +233,6 @@ cctile:     lda ZCurrYStart     ; curr line
             asl                 ; x4
             adc ZRefXStart      ; $00 or $02 depending on which side
             sta ZCollChkA       ; ref line mask half
-            ; TODO - drawing mask is reverse of what I need for collision mask
-            ; and this is a LOT of repeated computation on the fly.
 ccandmasks: ldy ZCollChkA       ; ref line mask half
             lda (ZPtrMaskA), y
             tax                 ; stash ref A mask in x
@@ -314,7 +275,7 @@ ccandmasks: ldy ZCollChkA       ; ref line mask half
             sty ZRefYStart
             jmp ccandmasks
 :           lda ZCurrXStart     ; check to see if we've done left tile but need to do
-            ora ZRefXStart      ; right tile (only zero if we did just left tiles so far)
+            ora ZRefXStart      ; right tile (only zero if we did only left tiles so far)
             bne ccnext          ; branch away if we have already done the right tile of a pair
             lda #$02            ; we were doing the left side of both, do right side now
             sta ZCurrXStart
@@ -322,9 +283,22 @@ ccandmasks: ldy ZCollChkA       ; ref line mask half
             jmp cctile
             ; two sprites have collided (presently overlap)
             ; we presume they did not previously overlap
-            ; so put them back where they were and swap their velocities
-
-            ; got a collision - swap velocities, restore position
+            ; if there were no flow, sending them apart could be as simple
+            ; as reversing their velocities to bounce them apart, or maybe
+            ; just swapping their velocities (though I think this has edge cases that fail)
+            ; but the problem is that the flow will get added back in again before
+            ; the bounce can take effect, and they might wind up continuing to overlap
+            ; putting them back in their prior position before swapping the velocities
+            ; should avoid this problem, but also might make things look like they
+            ; deflect off each other at a distance.
+            ; particularly in the situation where one is stopped, we want to keep the
+            ; other one from stopping, but then flowing on top again, while the first
+            ; one can't move because it's stuck on a shore.
+            ; perhaps a collision can simply undo a move?  That kind of works.
+            ; TODO - the basic problem I am having right now is that logs fairly
+            ; happily wind up moving vertically on top of each other.
+            ; perhaps the collision detection isn't quite working?
+            ; or this corrective action isn't.
 gotcoll:    ldy ZCurrSpr        
             lda (ZPrevX), y     ; restore current sprite's pre-movement position.
             sta (ZSprX), y
@@ -360,6 +334,7 @@ gotcoll:    ldy ZCurrSpr
             sta (ZSprXV), y     ; curr XV (CollChkA) -> ref XV
             lda ZCollChkB
             sta (ZSprYV), y     ; curr YV (CollChkB) -> ref YV
+            
 ;(.*)$             jmp :++
 ;(.*)$             ; if X velocities are the same sign, back up in X dimension
 ;(.*)$             txa                 ; curr XV

@@ -186,9 +186,6 @@ placelog:   ldy Seed                ; pick a map row
             dec LogsLeft
             bmi bmlogsdone
             jmp placelog
-            
-            ; we should now have placed NumLogs logs
-            ; TODO - maybe try to keep them from landing on top of one another
 
             ; place the player
 bmlogsdone: ldy #SprPlayer          ; player sprite

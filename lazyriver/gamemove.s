@@ -135,17 +135,17 @@ flowdone:   ldx Seed            ; add some random jostle on top of the flow
             clc
             adc (ZSprXV), y
             sta (ZSprXV), y
-:           inx
-            inc Seed
-            lda Random, x
-            and #$03
-            sec
-            sbc #$01
-            cmp #$02
-            beq :+
-            clc
-            adc (ZSprYV), y
-            sta (ZSprYV), y
+;(.*)$ :           inx
+;(.*)$             inc Seed
+;(.*)$             lda Random, x
+;(.*)$             and #$03
+;(.*)$             sec
+;(.*)$             sbc #$01
+;(.*)$             cmp #$02
+;(.*)$             beq :+
+;(.*)$             clc
+;(.*)$             adc (ZSprYV), y
+;(.*)$             sta (ZSprYV), y
 :           rts
 
 ; attempt to move the sprite according to its velocity vector
