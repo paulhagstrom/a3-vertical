@@ -195,30 +195,11 @@ KeyFlag = *+1
             sta (ZSprXV), y
             sta (ZSprYV), y
             jmp keydone
-:           cmp #$C1            ; A (ground stop)
+:           cmp #$D3            ; S (sound)
             bne :+
-            lda #$00
-            sta GroundVel
-            jmp keydone
-:           cmp #$DA            ; Z (down, scroll ground up)
-            bne :+
-            lda #$01
-            sta GroundVel
-            jmp keydone
-:           cmp #$D1            ; Q (up, scroll ground down)
-            bne :+
-            lda #$FF
-            sta GroundVel
-            jmp keydone
-:           cmp #$C5            ; E (up, jump ground down)
-            bne :+
-            lda #$FF
-            sta GroundJmp
-            jmp keydone
-:           cmp #$C3            ; C (up, jump ground up)
-            bne :+
-            lda #$01
-            sta GroundJmp
+            lda PlaySound
+            eor #$01
+            sta PlaySound
             jmp keydone
 :           cmp #$D8            ; X (exit)
             bne keydone            
