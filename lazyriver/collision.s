@@ -136,7 +136,7 @@ cccurloop:  ldy ZCurrSpr
             beq ccy             ; branch always
             ; BELOW IT SHOULD BE BCC AS FAR AS I CAN TELL
             ; BUT BCS SEEMS TO LOOK LIKE IT WORKS BETTER?
-:           bcc :+
+:           bcs :+
             ; reference x column precedes current, compare curr L to ref R
             lda #$02
             sta ZRefXStart
@@ -299,6 +299,21 @@ ccandmasks: ldy ZCollChkA       ; ref line mask half
             ; happily wind up moving vertically on top of each other.
             ; perhaps the collision detection isn't quite working?
             ; or this corrective action isn't.
+            ; TODO - maybe consider factoring velocity into movement delays
+            ; so we have velocities scaled like:
+            ; XV 1 delay 4, 3, 2, 1, 0, then XV 2, XV 3.  So that 3 is very high speed.
+            ; and player always moves at minimally delay 0 XV 1.
+            ; that is 7 levels of speed, that might make it look more interesting.
+            ; still would be nice if I could get it down below 5 VBLs.
+            ; though I like the flow, maybe the flow could be very slow.
+            ; in the delay region, flows from 4-1.
+            ; and logs will slow down to match the flow.  You can bang them along.
+            ; and the goal is to get them home. Rather than to avoid dams, which seems
+            ; difficult.  If logs run aground more easily that makes a better game maybe.
+            ; playfield is still pretty large.  Maybe that can be the level determiner.
+            ; you start with a few logs up pretty high in the playfield, if they all get
+            ; home you and logs start lower down, maybe more logs.
+            ; score can be timed, based on game ticks.
 gotcoll:    ldy ZCurrSpr        
             lda (ZPrevX), y     ; restore current sprite's pre-movement position.
             sta (ZSprX), y
@@ -317,12 +332,18 @@ gotcoll:    ldy ZCurrSpr
             ;(.*)$ sta (ZSprYV), y
             ;(.*)$ jmp :++
             
+            ; TODO - idea: maybe sprite types can have a weight
+            ; that gets factored into the colllision reaction.
+            ; so that the player has an easier time knocking logs
+            ; around
+            ; still need to figure out how to keep logs from overlapping
+            ; still seems like something is not right with the collision detection?
             lda (ZSprXV), y     ; swap velocities
             sta ZCollChkA       ; curr XV -> CollChkA
             lda (ZSprYV), y
             sta ZCollChkB       ; curr YV -> CollChkB
             ldy ZRefSpr
-            lda (ZSprXV), y     
+            lda (ZSprXV), y
             tax                 ; ref XV -> x
             lda (ZSprYV), y
             ldy ZCurrSpr

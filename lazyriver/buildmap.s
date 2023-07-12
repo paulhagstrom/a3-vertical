@@ -91,11 +91,13 @@ bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             sta ZMapPtr + 1
             lda MapLineL, y
             sta ZMapPtr
-            lda #$02        ; number of tiles in from right shore
+            ;lda #$02        ; number of tiles in from right shore
+            lda #$01        ; number of tiles in from right shore
             sta ProxR       ; where current pushes away from shore
             lda ShoreL      
             clc
-            adc #$02        ; number of tiles in from left shore
+            ;adc #$02        ; number of tiles in from left shore
+            adc #$01        ; number of tiles in from left shore
             sta ProxL       ; where current pushes away from shore
             lda ShoreR      ; compute present width
             sec
@@ -134,11 +136,13 @@ bmxflow:    clc                 ; add three to x velocity because it is
             lda ZWidth          ; work out y flow speed
             cmp #$06            ; narrow, fast water
             bcs :+
-            lda #%11000000      ; 3 is fast
+            ;lda #%11000000      ; 3 is fast
+            lda #%10000000      ; 3 is fast
             bne bmyflow         ; branch always
 :           cmp #$0C            ; middle width, speedy water
             bcs :+
-            lda #%10000000      ; 2 is speedy but not fast
+            ;lda #%10000000      ; 2 is speedy but not fast
+            lda #%01000000      ; 2 is speedy but not fast
             bne bmyflow         ; branch always
 :           lda #%01000000      ; 1 is slowish speed
 bmyflow:    ora ZPxScratch      ; add the y flow bits to other bits

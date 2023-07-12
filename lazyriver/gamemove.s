@@ -15,6 +15,7 @@ domove:     lda #$00            ; start with no proposed sound effect
 dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             bcs :+              ; if not at a movement tick, skip ahead
             jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
+            ;ldy ZCurrSpr
             jsr movesprite      ; enter with sprite in Y, exits with it still there
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
 :           dey
