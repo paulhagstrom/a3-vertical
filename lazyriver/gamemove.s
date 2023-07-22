@@ -1,6 +1,26 @@
 ; lazyriver
 ; movement processing
 
+; need to think about velocity
+; if there is no movement delay, a velocity of 3 is very fast.
+; if there is a movement delay AND a velocity of 3, things seem weird.
+; so movement delay should be considered to be part of the velocity.
+; probably this is best to set up in a lookup table.  Like so:
+;                   -6   -5   -4   -3   -2   -1    0    1    2    3    4    5   6
+SpeedVel:   .byte   $FD, $FE, $FF, $FF, $FF, $FF, $00, $01, $01, $01, $01, $02, $03
+SpeedDel:   .byte   $00, $00, $00, $01, $02, $03, $00, $03, $02, $01, $00, $00, $00
+
+; so there are in principle 13 values for speed.
+; we only have three bits to express water speed (left-right) or two (up)
+; so water speed is still going to be between -3 and 3, which winds up being
+; expressed solely in movement delay.
+; but wait.
+; surely x and y movement delays should be independent then.
+; so there needs to be a separate clock for each?  This is now getting complicated.
+; starting to like the simple no-delay version.
+; maybe I can just have enough sprites to make it slow. :D
+; TODO - remove support for movement delay.
+
 SFXQ:       .byte $00           ; proposed sound effect
 
 domove:     lda #$00            ; start with no proposed sound effect
@@ -8,15 +28,16 @@ domove:     lda #$00            ; start with no proposed sound effect
             ldy #SprPlayer      ; move player
             jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
             ; do not subject the player to the flow vectors or shore collisions
-            jsr movesprite      ; enter with sprite in Y, exits with it still there
+            jsr trymove         ; enter with sprite in Y, exits with it still there
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
             ; move logs
             ldy NumLogs         ; this is the sprite number
 dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
+            ; TODO - remove movement countdown sensing
             bcs :+              ; if not at a movement tick, skip ahead
             jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
             ;ldy ZCurrSpr
-            jsr movesprite      ; enter with sprite in Y, exits with it still there
+            jsr trymove         ; enter with sprite in Y, exits with it still there
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
 :           dey
             bpl dmmovelog
@@ -44,6 +65,7 @@ ticksprite: sty ZCurrSpr
             lda (ZSprAnim), y   ; switch frames
             eor #$01
             sta (ZSprAnim), y
+            ; TODO - remove this movement countdown
 :           lda (ZSprMvTick), y ; decrease movement countdown tick
             sec
             sbc #$01
@@ -51,6 +73,7 @@ ticksprite: sty ZCurrSpr
             bcs :+              ; not time to move yet
             lda (ZSprDelay), y  ; reset movement tick timer
             sta (ZSprMvTick), y
+            ; TODO - end removal of movement countdown
             lda (ZSprY), y      ; remember original map row in ZOldY
             sta (ZPrevY),y
             sta ZOldY
@@ -61,6 +84,9 @@ ticksprite: sty ZCurrSpr
             sta (ZPrevYOff),y
             lda (ZSprXOff), y   ; remember original x offset column
             sta (ZPrevXOff), y
+            lda #$00            ; have not yet tested this sprite for collision
+            sta (ZSprColChk), y
+            ; TODO - clc should not be necessary, there for movement countdown
             clc                 ; tell caller to move this sprite
 :           rts
 
@@ -153,7 +179,7 @@ flowdone:   ldx Seed            ; add some random jostle on top of the flow
 ; enter with y holding the sprite number, exits with y still holding that
 ; does not disturb x
 ; will stop a sprite that hits a map edge
-movesprite: lda (ZSprXV), y     ; handle movement in X coordinate
+trymove:    lda (ZSprXV), y     ; handle movement in X coordinate
             bmi msgoleft        ; branch away if moving left
             clc                 ; moving right (or stationary), add to x offset
             adc (ZSprXOff), y
@@ -236,7 +262,7 @@ msgoup:     clc                 ; sprite is moving up
 
 ; update the sprite's coordinates based on what survived of the proposal
 ; ticksprite must be called first (to set ZCurrSpr)
-; movesprite must be called first (to set ZNewX, ZNewXOff, ZNewY, ZNewYOff)
+; trymove must be called first (to set ZNewX, ZNewXOff, ZNewY, ZNewYOff)
 ; returns with current sprite in Y
 spriteupd:  ldy ZCurrSpr
             lda ZNewX

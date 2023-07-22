@@ -69,7 +69,7 @@ spriteinit:
             lda #$00
             sta ZSprSprH
             stx ZSprSprH + 1
-            lda #$80
+            lda #$80            ; TODO - remove
             sta ZSprDelay
             stx ZSprDelay + 1
             inx                 ; $C00
@@ -94,9 +94,12 @@ spriteinit:
             sta ZSprCollL
             stx ZSprCollL + 1
             inx                 ; $F00
-            lda #$00
+            lda #$00            ; TODO - remove
             sta ZSprMvTick
             stx ZSprMvTick + 1
+            lda #$80
+            sta ZSprColChk
+            stx ZSprColChk + 1
             lda #$82            ; bank 2
             sta ZSprX + XByte
             sta ZSprY + XByte
@@ -123,6 +126,7 @@ spriteinit:
             sta ZPrevYOff + XByte
             sta ZSprCollH + XByte
             sta ZSprCollL + XByte
+            sta ZSprColChk + XByte
 
             ; place some logs
             lda NumLogs

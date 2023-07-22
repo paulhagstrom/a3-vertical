@@ -4,9 +4,72 @@
 SprCollA    = $500
 SprCollB    = $600
 
+; handling collisions where they are supposed to make a sprite stop
+; rather than just disappear is a bit complex.  The basic idea is that
+; a sprite moves to a new position, and then if it collides with something
+; in the new position, you want to either put it back and stop it
+; or send it off in a new
+; direction.  But if putting a sprite back in its old position causes a
+; collision with a different sprite that is in its own new position, 
+; the sprite in the new position might already have been cleared as non-colliding.
+; 
+; So: whenever a sprite gets put back in its old position, that old position
+; needs to be checked against everything again since even if it did not used
+; to be in collision prior to the movement, it might be now.
+;
+; plan:
+; attempt movement (in gamemove) storing the proposed new positions
+; check to see if something hit a shore.
+; revert position and stop velocity for all sprites whose new position hit shore.
+; then: check sprite pairs triangle until every pair is skipped
+; skip a pair if collision was tested and neither was reverted
+; or if both were already reverted.
+; otherwise, check the pair for collision and mark it as checked.
+; if there was a collision:
+; if one is already reverted, revert the other and bounce it backwards
+; otherwise revert both and swap their velocities
+; 
+; collisions:
+; generally if both sprites are free, we can just swap velocities
+; but if a sprite hits a reverted sprite (ran aground or hit another)
+; then it should bounce off
+;
+; plan: check the triangle of sprite pairs and revert any that collide
+; then: recheck the triangle of sprite pairs, skipping any pair where
+; either both or neither have beem reverted.
+; and repeat until only skipped sprites remain.
+;
+;
+; The simplest thing to do would be to just check on every revert, but this
+; seems computationally expensive.  Particularly in a logjam situation.
+; I guess maybe I will start wihth the simple version and see if it at least
+; works, since without this I definitely have logs piling up on top of each
+; other.
+;
+; working out the algorithm in comments here
+; if there are 4 sprites, compute new positions for all of them, then
+; ref 4 check against 1, 2, 3
+; if 4 collides with 2, put both 4 and 2 back
+; but then have to check 4 against 1 and 3 again in its restored position
+; because this could lead to 1 or 3 being returned to their old position
+;
+; ref 5, check 1, 2, 3, 4.  Sprite 1 collides.
+; put 1 and 5 back.
+; ref 4, check 3, 2, 1.  Sprite 1 collides
+; put 4 back, 1 is already back.
+; 5 should not collide with 1 or 4 now because all are back.
+; but 5 could collide with 3 at this point.
+;
+; ok, maybe I need to keep a list of sprites that have no longer
+; been checked?  If I revert a sprite it needs to be rechecked
+; against all non-reverted sprites.
+; so continue as I have, check a triangle of sprites and revert
+; colliders, but then check every reverted sprite against
+; every non-reverted sprite?
+; 
+; 
 ; check sprites to see if they have hit the shoreline
 ; if they have, revert their position and stop their movement
-; check this after doing sprite-sprite collisions
 collshore:  lda NumLogs         ; starting sprite number
             sta ZCurrSpr
 :           ldy ZCurrSpr
