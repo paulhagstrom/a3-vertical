@@ -42,7 +42,7 @@ SprCollB    = $600
 ;
 ; The simplest thing to do would be to just check on every revert, but this
 ; seems computationally expensive.  Particularly in a logjam situation.
-; I guess maybe I will start wihth the simple version and see if it at least
+; I guess maybe I will start with the simple version and see if it at least
 ; works, since without this I definitely have logs piling up on top of each
 ; other.
 ;
