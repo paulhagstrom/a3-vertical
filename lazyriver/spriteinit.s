@@ -69,7 +69,7 @@ spriteinit:
             lda #$00
             sta ZSprSprH
             stx ZSprSprH + 1
-            lda #$80            ; TODO - remove
+            lda #$80
             sta ZSprDelay
             stx ZSprDelay + 1
             inx                 ; $C00
@@ -94,12 +94,12 @@ spriteinit:
             sta ZSprCollL
             stx ZSprCollL + 1
             inx                 ; $F00
-            lda #$00            ; TODO - remove
+            lda #$00
             sta ZSprMvTick
             stx ZSprMvTick + 1
             lda #$80
-            sta ZSprColChk
-            stx ZSprColChk + 1
+            sta ZSprColRev
+            stx ZSprColRev + 1
             lda #$82            ; bank 2
             sta ZSprX + XByte
             sta ZSprY + XByte
@@ -126,7 +126,7 @@ spriteinit:
             sta ZPrevYOff + XByte
             sta ZSprCollH + XByte
             sta ZSprCollL + XByte
-            sta ZSprColChk + XByte
+            sta ZSprColRev + XByte
 
             ; place some logs
             lda NumLogs
@@ -172,7 +172,7 @@ placelog:   ldy Seed                ; pick a map row
             and #$03                ; between 0 and 3
             clc
             adc #$02                ; well, between 2 and 5
-            lda #$00                ; well, actually, just zero
+            lda #$00                ; well, actually, just zero - TODO settle on something
             sta (ZSprDelay), y
             inx                     ; pick a animation period
             inc Seed
@@ -203,13 +203,6 @@ bmlogsdone: ldy #SprPlayer          ; player sprite
             sta (ZSprAnim), y
             lda #S_PLAYER           ; sprite type
             jsr sprfinish           ; fill in the rest of the easy variables
-            
-            ; now done placing logs and player
-            
-
-            ; TODO - and add collision detection that can stop a log if it hits something.
-            ; TODO - idea would be that touching something (bank, log, player)
-            ; TODO - induces friction.  Player can bang into a log.
             rts
 
 ; finish the sprite after most of the definition was filled in
@@ -254,8 +247,8 @@ sprfinish:  sta (ZSprType), y       ; A=sprite type
             sta (ZPrevXOff), y      ; previous X offset
             sta (ZPrevYOff), y      ; previous Y offset
             lda #$FF
-            sta (ZSprDrXOne), y     ; mark as undrawn
-            sta (ZSprDrXTwo), y     ; mark as undrawn
+            sta (ZSprDrXOne), y     ; mark as undrawn on page 1
+            sta (ZSprDrXTwo), y     ; mark as undrawn on page 2
             ; compute cache address (bank 2 from $1000)
             ; should be $1000 + int(sprite / 4) * $100 + (sprite % 4) * $40
             ; this will run from $1000-2FFF, and for page 2, add $2000 ($3000-4FFF)

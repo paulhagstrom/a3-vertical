@@ -59,25 +59,25 @@ ZSprYOff    = $36   ; pointer to sprite Y coordinates offset data
 ZSprXV      = $38   ; pointer to sprite X velocity data
 ZSprYV      = $3A   ; pointer to sprite Y velocity data
 ZSprType    = $3C   ; pointer to sprite type data
-ZSprTick    = $3E   ; pointer to sprite tick data
+ZSprTick    = $3E   ; pointer to sprite animation countdown tick data
 ZSprAnim    = $40   ; pointer to sprite current frame data
-ZSprPeriod  = $42   ; pointer to sprite tick period data
-ZSprDrXOne  = $44   ; pointer to X byte sprite drawn in (or minus if not drawn)
-ZSprDrYOne  = $46   ; pointer to Y raster sprite drawn in
-ZSprDrXTwo  = $48   ; pointer to X byte sprite drawn in (or minus if not drawn)
-ZSprDrYTwo  = $4A   ; pointer to Y raster sprite drawn in
+ZSprPeriod  = $42   ; pointer to sprite animation period data
+ZSprDrXOne  = $44   ; pointer to X byte sprite drawn in on page 1 (or minus if not drawn)
+ZSprDrYOne  = $46   ; pointer to Y raster sprite drawn in on page 1
+ZSprDrXTwo  = $48   ; pointer to X byte sprite drawn in on page 2 (or minus if not drawn)
+ZSprDrYTwo  = $4A   ; pointer to Y raster sprite drawn in on page 2
 ZSprBgL     = $4C   ; pointer to low byte of pointer to sprite cached background
 ZSprBgH     = $4E   ; pointer to high byte of pointer to sprite cached background
 ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprType)
-ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
-ZSprMvTick  = $54   ; pointer to countdown to next movement
-ZPrevX      = $56   ; pointer to sprite X pre-movement
-ZPrevY      = $58   ; pointer to sprite Y pre-movement
-ZPrevXOff   = $5A   ; pointer to sprite X offset pre-movement
-ZPrevYOff   = $5C   ; pointer to sprite Y offset pre-movement
+ZSprDelay   = $52   ; pointer to sprite frame delay between movements (fractional velocity)
+ZSprMvTick  = $54   ; pointer to countdown to next movement (fractional velocity)
+ZPrevX      = $56   ; pointer to sprite X pre-movement (if we need to revert it)
+ZPrevY      = $58   ; pointer to sprite Y pre-movement (if we need to revert it)
+ZPrevXOff   = $5A   ; pointer to sprite X offset pre-movement (if we need to revert it)
+ZPrevYOff   = $5C   ; pointer to sprite Y offset pre-movement (if we need to revert it)
 ZSprCollH   = $5E   ; pointer to high byte of sprite collision mask
 ZSprCollL   = $60   ; pointer to low byte of sprite collision mask
-ZSprColChk  = $62   ; pointer to collision checked flag
+ZSprColRev  = $62   ; pointer to collision checked / sprite reverted flags
 
 ; variables used during movement processing
 ZCollODiff  = $64   ; collision check offset difference
@@ -145,7 +145,9 @@ ZPageBase   = $EB
 ZCacheBase  = $EC
 ZSprLnsLeft = $ED
 
-ZPxScratch  = $FF
+ZPxScratch  = $Fd
+ZPxScratchX = $FF
+ZPxScratchY = $FF
 
 ; I/O softswitches
 
