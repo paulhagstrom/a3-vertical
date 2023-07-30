@@ -69,15 +69,12 @@ ZSprDrYTwo  = $4A   ; pointer to Y raster sprite drawn in
 ZSprBgL     = $4C   ; pointer to low byte of pointer to sprite cached background
 ZSprBgH     = $4E   ; pointer to high byte of pointer to sprite cached background
 ZSprSprH    = $50   ; pointer to high byte of sprite data (correlates with ZSprType)
-ZSprDelay   = $52   ; pointer to sprite speed (frames between movements)
-ZSprMvTick  = $54   ; pointer to countdown to next movement
-ZPrevX      = $56   ; pointer to sprite X pre-movement
-ZPrevY      = $58   ; pointer to sprite Y pre-movement
-ZPrevXOff   = $5A   ; pointer to sprite X offset pre-movement
-ZPrevYOff   = $5C   ; pointer to sprite Y offset pre-movement
-ZSprCollH   = $5E   ; pointer to high byte of sprite collision mask
-ZSprCollL   = $60   ; pointer to low byte of sprite collision mask
-ZSprColChk  = $62   ; pointer to collision checked flag
+ZPrevX      = $52   ; pointer to sprite X pre-movement
+ZPrevY      = $54   ; pointer to sprite Y pre-movement
+ZPrevXOff   = $56   ; pointer to sprite X offset pre-movement
+ZPrevYOff   = $58   ; pointer to sprite Y offset pre-movement
+ZSprCollH   = $5A   ; pointer to high byte of sprite collision mask
+ZSprCollL   = $5C   ; pointer to low byte of sprite collision mask
 
 ; variables used during movement processing
 ZCollODiff  = $64   ; collision check offset difference

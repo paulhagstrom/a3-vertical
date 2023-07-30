@@ -1,26 +1,6 @@
 ; lazyriver
 ; movement processing
 
-; need to think about velocity
-; if there is no movement delay, a velocity of 3 is very fast.
-; if there is a movement delay AND a velocity of 3, things seem weird.
-; so movement delay should be considered to be part of the velocity.
-; probably this is best to set up in a lookup table.  Like so:
-;                   -6   -5   -4   -3   -2   -1    0    1    2    3    4    5   6
-SpeedVel:   .byte   $FD, $FE, $FF, $FF, $FF, $FF, $00, $01, $01, $01, $01, $02, $03
-SpeedDel:   .byte   $00, $00, $00, $01, $02, $03, $00, $03, $02, $01, $00, $00, $00
-
-; so there are in principle 13 values for speed.
-; we only have three bits to express water speed (left-right) or two (up)
-; so water speed is still going to be between -3 and 3, which winds up being
-; expressed solely in movement delay.
-; but wait.
-; surely x and y movement delays should be independent then.
-; so there needs to be a separate clock for each?  This is now getting complicated.
-; starting to like the simple no-delay version.
-; maybe I can just have enough sprites to make it slow. :D
-; TODO - remove support for movement delay.
-
 SFXQ:       .byte $00           ; proposed sound effect
 
 domove:     lda #$00            ; start with no proposed sound effect
@@ -33,16 +13,14 @@ domove:     lda #$00            ; start with no proposed sound effect
             ; move logs
             ldy NumLogs         ; this is the sprite number
 dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
-            ; TODO - remove movement countdown sensing
-            bcs :+              ; if not at a movement tick, skip ahead
             jsr flowsprite      ; uses ZCurrSpr, exits with sprite in Y
             ;ldy ZCurrSpr
             jsr trymove         ; enter with sprite in Y, exits with it still there
             jsr spriteupd       ; uses ZCurrSpr, exits with current sprite in Y
-:           dey
+            dey
             bpl dmmovelog
-            jsr collmatrix      ; check sprite-to-sprite collisions
             jsr collshore       ; check whether sprites ran aground
+            jsr collmatrix      ; check sprite-to-sprite collisions
             lda SFXQ            ; has there been a sound effects proposal?
             beq :+
             sta ZFXPtr + 1
@@ -55,7 +33,7 @@ dmmovelog:  jsr ticksprite      ; stores Y in ZCurrSpr, leaves Y unchanged
 ; tick animation for a single sprite and put sprite number in ZCurrSpr
 ; enter with Y holding the sprite number, y continues to hold sprite number after
 ticksprite: sty ZCurrSpr
-            lda (ZSprTick), y   ; decrease tick
+            lda (ZSprTick), y   ; decrease animation tick
             sec
             sbc #$01
             sta (ZSprTick), y
@@ -65,16 +43,7 @@ ticksprite: sty ZCurrSpr
             lda (ZSprAnim), y   ; switch frames
             eor #$01
             sta (ZSprAnim), y
-            ; TODO - remove this movement countdown
-:           lda (ZSprMvTick), y ; decrease movement countdown tick
-            sec
-            sbc #$01
-            sta (ZSprMvTick), y
-            bcs :+              ; not time to move yet
-            lda (ZSprDelay), y  ; reset movement tick timer
-            sta (ZSprMvTick), y
-            ; TODO - end removal of movement countdown
-            lda (ZSprY), y      ; remember original map row in ZOldY
+:           lda (ZSprY), y      ; remember original map row in ZOldY
             sta (ZPrevY),y
             sta ZOldY
             lda (ZSprX), y      ; remember original map column in ZOldX
@@ -84,11 +53,7 @@ ticksprite: sty ZCurrSpr
             sta (ZPrevYOff),y
             lda (ZSprXOff), y   ; remember original x offset column
             sta (ZPrevXOff), y
-            lda #$00            ; have not yet tested this sprite for collision
-            sta (ZSprColChk), y
-            ; TODO - clc should not be necessary, there for movement countdown
-            clc                 ; tell caller to move this sprite
-:           rts
+            rts
 
 ; update sprite's velocity based on flow vector of the tile it is in
 ; ticksprite must be called first to set ZCurrSpr, ZOldY, ZOldX
@@ -162,17 +127,6 @@ flowdone:   ldx Seed            ; add some random jostle on top of the flow
             clc
             adc (ZSprXV), y
             sta (ZSprXV), y
-;(.*)$ :           inx
-;(.*)$             inc Seed
-;(.*)$             lda Random, x
-;(.*)$             and #$03
-;(.*)$             sec
-;(.*)$             sbc #$01
-;(.*)$             cmp #$02
-;(.*)$             beq :+
-;(.*)$             clc
-;(.*)$             adc (ZSprYV), y
-;(.*)$             sta (ZSprYV), y
 :           rts
 
 ; attempt to move the sprite according to its velocity vector

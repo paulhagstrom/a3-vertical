@@ -91,13 +91,13 @@ bmmapline:  sty MapLine     ; put map line base address in ZMapPtr
             sta ZMapPtr + 1
             lda MapLineL, y
             sta ZMapPtr
-            ;lda #$02        ; number of tiles in from right shore
-            lda #$01        ; number of tiles in from right shore
+            lda #$02        ; number of tiles in from right shore
+            ;lda #$01        ; number of tiles in from right shore
             sta ProxR       ; where current pushes away from shore
             lda ShoreL      
             clc
-            ;adc #$02        ; number of tiles in from left shore
-            adc #$01        ; number of tiles in from left shore
+            adc #$02        ; number of tiles in from left shore
+            ;adc #$01        ; number of tiles in from left shore
             sta ProxL       ; where current pushes away from shore
             lda ShoreR      ; compute present width
             sec

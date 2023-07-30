@@ -69,9 +69,7 @@ spriteinit:
             lda #$00
             sta ZSprSprH
             stx ZSprSprH + 1
-            lda #$80            ; TODO - remove
-            sta ZSprDelay
-            stx ZSprDelay + 1
+            ; gap here from one I removed
             inx                 ; $C00
             lda #$00
             sta ZPrevX
@@ -93,13 +91,6 @@ spriteinit:
             lda #$80
             sta ZSprCollL
             stx ZSprCollL + 1
-            inx                 ; $F00
-            lda #$00            ; TODO - remove
-            sta ZSprMvTick
-            stx ZSprMvTick + 1
-            lda #$80
-            sta ZSprColChk
-            stx ZSprColChk + 1
             lda #$82            ; bank 2
             sta ZSprX + XByte
             sta ZSprY + XByte
@@ -118,15 +109,12 @@ spriteinit:
             sta ZSprBgL + XByte
             sta ZSprBgH + XByte
             sta ZSprSprH + XByte
-            sta ZSprDelay + XByte
-            sta ZSprMvTick + XByte
             sta ZPrevX + XByte
             sta ZPrevY + XByte
             sta ZPrevXOff + XByte
             sta ZPrevYOff + XByte
             sta ZSprCollH + XByte
             sta ZSprCollL + XByte
-            sta ZSprColChk + XByte
 
             ; place some logs
             lda NumLogs
@@ -166,14 +154,6 @@ placelog:   ldy Seed                ; pick a map row
             lda Random, x
             and #$01                ; between 0 and 1
             sta (ZSprAnim), y
-            inx                     ; pick a movement delay (speed control)
-            inc Seed
-            lda Random, x
-            and #$03                ; between 0 and 3
-            clc
-            adc #$02                ; well, between 2 and 5
-            lda #$00                ; well, actually, just zero
-            sta (ZSprDelay), y
             inx                     ; pick a animation period
             inc Seed
             lda Random, x
@@ -248,7 +228,6 @@ sprfinish:  sta (ZSprType), y       ; A=sprite type
             sta (ZSprXOff), y       ; x offset from tile edge
             sta (ZSprYOff), y       ; y offset from tile edge
             sta (ZSprTick), y       ; current animation tick
-            sta (ZSprMvTick), y     ; current movement tick
             sta (ZPrevX), y         ; previous X
             sta (ZPrevY), y         ; previous Y
             sta (ZPrevXOff), y      ; previous X offset
