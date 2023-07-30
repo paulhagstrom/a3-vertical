@@ -9,8 +9,8 @@ StatText:   .byte "  Level 00"
             .byte "e 000000  "
 
 StatCol:    .byte $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2C, $2C
-            .byte $2D, $2D, $2D, $2D, $2D, $3C, $3C, $3C, $3C, $3C
-            .byte $3C, $3C, $3C, $3C, $3C, $2D, $2D, $2D, $2D, $2D
+            .byte $2D, $2D, $2D, $2D, $2D, $19, $19, $19, $19, $19
+            .byte $19, $19, $19, $19, $19, $2D, $2D, $2D, $2D, $2D
             .byte $2D, $2D, $2E, $2E, $2E, $2E, $2E, $2E, $2E, $2E
 
 TextPageA = $0400
@@ -52,9 +52,6 @@ drawlevel:  lda #<TextPageA
             jmp drawnumber
 
 ; draw the score and progress
-
-CharGot:    .byte $00, $0C, $15, $21
-CharLeft:   .byte $05, $11, $1A, $26
 
 drawstatus: lda #<TextPageA
             clc
